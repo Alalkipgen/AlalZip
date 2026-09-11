@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.ArchivePocket" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#3949AB</item>
+        <item name="android:navigationBarColor">#283593</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

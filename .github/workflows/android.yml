@@ -1,0 +1,93 @@
+name: Alal Zip APK (debug + optimized release)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          accept-android-sdk-licenses: true
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Verify wrapper, source and native tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x "${GITHUB_WORKSPACE}/gradlew"
+          python3 "${GITHUB_WORKSPACE}/tools/check_source.py"
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt2" version
+          java -version
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Run JVM tests and Android lint
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
+      - name: Verify and name the actual APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="${GITHUB_WORKSPACE}/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
+          mkdir -p "${RUNNER_TEMP}/alal-zip-artifact"
+          cp "$apk" "${RUNNER_TEMP}/alal-zip-artifact/Alal-Zip-debug.apk"
+          sha256sum "${RUNNER_TEMP}/alal-zip-artifact/Alal-Zip-debug.apk"
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: Alal-Zip-debug
+          path: ${{ runner.temp }}/alal-zip-artifact/Alal-Zip-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Build optimized release APK (R8)
+        shell: bash
+        env:
+          ALAL_KEYSTORE_BASE64: ${{ secrets.ALAL_KEYSTORE_BASE64 }}
+          ALAL_KEYSTORE_PASSWORD: ${{ secrets.ALAL_KEYSTORE_PASSWORD }}
+          ALAL_KEY_ALIAS: ${{ secrets.ALAL_KEY_ALIAS }}
+          ALAL_KEY_PASSWORD: ${{ secrets.ALAL_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ALAL_KEYSTORE_BASE64:-}" ]; then
+            echo "$ALAL_KEYSTORE_BASE64" | base64 -d > "${RUNNER_TEMP}/alal-release.jks"
+            export ALAL_KEYSTORE_FILE="${RUNNER_TEMP}/alal-release.jks"
+            echo "Signing release with keystore from repository secrets"
+          else
+            echo "No ALAL_KEYSTORE_BASE64 secret: release APK is signed with this runner's debug key"
+          fi
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Verify and name the release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="${GITHUB_WORKSPACE}/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
+          mkdir -p "${RUNNER_TEMP}/alal-zip-release"
+          cp "$apk" "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+          ls -l "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+          sha256sum "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: Alal-Zip-release
+          path: ${{ runner.temp }}/alal-zip-release/Alal-Zip-release.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

@@ -1,0 +1,38 @@
+[
+  {
+    "file": "rar4.rar",
+    "url": "https://raw.githubusercontent.com/junrar/junrar/v8.1.1/src/test/resources/com/github/junrar/rar4.rar",
+    "sha256": "91e21f4126181790429f5e5ecdefedae6d6883ed6b4b396fc94d4ed6b32c065a",
+    "size": 123
+  },
+  {
+    "file": "rar5.rar",
+    "url": "https://raw.githubusercontent.com/junrar/junrar/v8.1.1/src/test/resources/com/github/junrar/rar5.rar",
+    "sha256": "aaf1a7d974f302f181720280151053f15ef1119b13d2f7bf9fddf2163bbf1701",
+    "size": 130
+  },
+  {
+    "file": "rar4-encrypted-junrar.rar",
+    "url": "https://raw.githubusercontent.com/junrar/junrar/v8.1.1/src/test/resources/com/github/junrar/password/rar4-encrypted-junrar.rar",
+    "sha256": "d8c3117434d142cfdb479ffd08c6239126f7805e0547907578a41b3740668735",
+    "size": 148
+  },
+  {
+    "file": "rar4-password-junrar.rar",
+    "url": "https://raw.githubusercontent.com/junrar/junrar/v8.1.1/src/test/resources/com/github/junrar/password/rar4-password-junrar.rar",
+    "sha256": "6eaba6677e056caee5548669eed13ac932e6a8ac150d6c5c69ae95d23f002588",
+    "size": 110
+  },
+  {
+    "file": "rar5-encrypted-junrar.rar",
+    "url": "https://raw.githubusercontent.com/junrar/junrar/v8.1.1/src/test/resources/com/github/junrar/password/rar5-encrypted-junrar.rar",
+    "sha256": "eedcde5498c9f7b7431b524b44f481184b08e64a7274a2f29d8b9d11850790b9",
+    "size": 254
+  },
+  {
+    "file": "rar5-password-junrar.rar",
+    "url": "https://raw.githubusercontent.com/junrar/junrar/v8.1.1/src/test/resources/com/github/junrar/password/rar5-password-junrar.rar",
+    "sha256": "3fd635f8e1b880d10c1fea72ab3b2487309d8699dabb3869c3a3b489ec36ee92",
+    "size": 149
+  }
+]
