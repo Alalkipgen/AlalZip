@@ -324,19 +324,27 @@ private fun ArchiveGlyph(size: Dp) {
     Canvas(Modifier.size(size)) {
         val w = this.size.width; val h = this.size.height
         drawRoundRect(Brush.linearGradient(listOf(IndigoDeep, IndigoLight)), Offset(0f, 0f), Size(w, h), CornerRadius(w * 0.26f))
-        val tape = h * 0.05f
-        val top = h * 0.34f
-        val bottom = h * 0.62f
-        drawRoundRect(Color.White, Offset(w * 0.12f, top), Size(w * 0.56f, tape), CornerRadius(w * 0.02f))
-        drawRoundRect(Color.White, Offset(w * 0.12f, bottom), Size(w * 0.56f, tape), CornerRadius(w * 0.02f))
-        var x = w * 0.14f
-        while (x + w * 0.05f <= w * 0.67f) {
-            drawRect(Color.White, Offset(x, top + tape), Size(w * 0.05f, h * 0.09f))
-            drawRect(Color.White, Offset(x + w * 0.055f, bottom - h * 0.09f), Size(w * 0.05f, h * 0.09f))
-            x += w * 0.11f
+        // Mirrors the launcher mark: a white tile whose zipper is open at the top.
+        drawRoundRect(Color.White, Offset(w * 0.12f, h * 0.12f), Size(w * 0.76f, h * 0.76f), CornerRadius(w * 0.21f))
+        val wedge = Path().apply {
+            moveTo(w * 0.5f, h * 0.517f)
+            lineTo(w * 0.343f, h * 0.12f)
+            lineTo(w * 0.657f, h * 0.12f)
+            close()
         }
-        drawRoundRect(Amber, Offset(w * 0.66f, h * 0.31f), Size(w * 0.22f, h * 0.36f), CornerRadius(w * 0.06f))
-        drawRoundRect(AmberDark, Offset(w * 0.73f, h * 0.65f), Size(w * 0.08f, h * 0.18f), CornerRadius(w * 0.03f))
+        drawPath(wedge, IndigoLight)
+        val seamHalf = w * 0.036f
+        drawRect(IndigoLight, Offset(w * 0.5f - seamHalf, h * 0.566f), Size(seamHalf * 2, h * 0.231f))
+        var y = h * 0.592f
+        var left = true
+        while (y + h * 0.036f <= h * 0.797f) {
+            val x = if (left) w * 0.5f - seamHalf - w * 0.053f else w * 0.5f + seamHalf
+            drawRect(IndigoLight, Offset(x, y), Size(w * 0.053f, h * 0.036f))
+            left = !left
+            y += h * 0.05f
+        }
+        drawRoundRect(Amber, Offset(w * 0.401f, h * 0.444f), Size(w * 0.198f, h * 0.145f), CornerRadius(w * 0.046f))
+        drawRoundRect(AmberDark, Offset(w * 0.467f, h * 0.583f), Size(w * 0.066f, h * 0.165f), CornerRadius(w * 0.03f))
     }
 }
 
@@ -933,7 +941,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             "about" -> PocketDialog(
-                title = "Alal Zip", subtitle = "Version 0.6.1  \u00b7  offline, no internet permission",
+                title = "Alal Zip", subtitle = "Version 0.6.2  \u00b7  offline, no internet permission",
                 onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null }, dismissLabel = null,
                 glyph = { ArchiveGlyph(40.dp) }
             ) {
