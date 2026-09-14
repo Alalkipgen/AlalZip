@@ -741,12 +741,13 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
             }
             "zip", "extract" -> ArchiveDialog(
                 create = dialog == "zip",
-                destination = state.folders.lastOrNull()?.path ?: "",
+                current = state.folders.lastOrNull() ?: model.root,
+                root = model.root,
                 initialName = if (dialog == "zip") (selected.singleOrNull()?.name?.substringBeforeLast('.') ?: "Archive") + ".zip"
                     else selected.singleOrNull()?.name?.substringBeforeLast('.')?.ifBlank { null } ?: "Extracted",
                 dismiss = { dialog = null }
-            ) { name, password ->
-                if (dialog == "zip") model.zip(name, password) else model.extract(name, password)
+            ) { name, password, destination ->
+                if (dialog == "zip") model.zip(name, password, destination) else model.extract(name, password, destination)
                 dialog = null
             }
             "sort" -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text("Sort by") },
@@ -933,28 +934,98 @@ private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, subm
 }
 
 @Composable
-private fun ArchiveDialog(create: Boolean, destination: String, initialName: String, dismiss: () -> Unit, submit: (String, CharArray?) -> Unit) {
+private fun ArchiveDialog(create: Boolean, current: File, root: File, initialName: String, dismiss: () -> Unit, submit: (String, CharArray?, File) -> Unit) {
     var name by remember { mutableStateOf(initialName) }
     // Deliberately not rememberSaveable: passwords must never enter saved instance state.
     var password by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
+    var destination by remember(current.path) { mutableStateOf(current) }
+    var picking by remember { mutableStateOf(false) }
     val valid = name.isNotBlank() && (!create || password == repeat)
     fun close() { password = ""; repeat = ""; dismiss() }
+    if (picking) {
+        FolderPickerDialog(start = destination, root = root, dismiss = { picking = false }) { chosen ->
+            destination = chosen; picking = false
+        }
+        return
+    }
     AlertDialog(onDismissRequest = { close() }, icon = { ArchiveGlyph(40.dp) }, title = { Text(if (create) "Create ZIP" else "Extract ZIP / RAR") },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Destination: $destination", style = MaterialTheme.typography.bodySmall)
+            Column {
+                Text("Destination: ${destination.path}", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { picking = true }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("Change folder\u2026") }
+            }
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(if (create) "ZIP file name" else "Output folder name") }, singleLine = true, shape = RoundedCornerShape(12.dp))
-            OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password (optional)") }, singleLine = true, shape = RoundedCornerShape(12.dp),
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-            if (create) OutlinedTextField(value = repeat, onValueChange = { repeat = it }, label = { Text("Repeat password") }, singleLine = true, shape = RoundedCornerShape(12.dp),
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-            Text(if (create) "The ZIP is created in the current folder. A non-empty password enables AES-256. File names are not hidden. Forgotten passwords cannot be recovered."
-                else "Files are extracted into a new sub-folder of the current folder. Leave the password empty: if the archive is encrypted you will be asked for it. Up to 2 GiB output. Split volumes and RAR links are unsupported.", style = MaterialTheme.typography.bodySmall)
+            if (create) {
+                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password (optional)") }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
+                OutlinedTextField(value = repeat, onValueChange = { repeat = it }, label = { Text("Repeat password") }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
+            }
+            Text(if (create) "The ZIP is created in the destination folder. A non-empty password enables AES-256. File names are not hidden. Forgotten passwords cannot be recovered."
+                else "Files are extracted into a new sub-folder of the destination folder you choose. Encrypted archives ask for their password only when it is needed. Up to 2 GiB output. Split volumes and RAR links are unsupported.", style = MaterialTheme.typography.bodySmall)
         } },
         confirmButton = { TextButton(enabled = valid, onClick = {
-            val chars = password.takeIf { it.isNotEmpty() }?.toCharArray()
+            val chars = if (create) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
             password = ""; repeat = ""
-            submit(if (create && !name.endsWith(".zip", true)) "$name.zip" else name, chars)
+            submit(if (create && !name.endsWith(".zip", true)) "$name.zip" else name, chars, destination)
         }) { Text(if (create) "Create" else "Extract") } },
         dismissButton = { TextButton(onClick = { close() }) { Text("Cancel") } })
 }
+
+/** RAR-style destination chooser: browse folders under the storage root and pick one. */
+@Composable
+private fun FolderPickerDialog(start: File, root: File, dismiss: () -> Unit, select: (File) -> Unit) {
+    fun path(file: File): String = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
+    var folder by remember { mutableStateOf(if (start.isDirectory && path(start).startsWith(path(root))) start else root) }
+    var children by remember { mutableStateOf<List<File>>(emptyList()) }
+    var failed by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(folder.path, reload) {
+        val listed = withContext(Dispatchers.IO) {
+            folder.listFiles()?.filter { it.isDirectory }?.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        }
+        failed = listed == null
+        children = listed ?: emptyList()
+    }
+    val parent = folder.parentFile
+    val canGoUp = parent != null && path(folder) != path(root) && path(folder).startsWith(path(root))
+    if (creating) {
+        NameDialog("New folder in ${folder.name}", "", dismiss = { creating = false }) { newName ->
+            creating = false
+            val safe = newName.trim()
+            if (safe.isNotBlank() && !safe.contains('/') && safe != "." && safe != "..") {
+                val created = File(folder, safe)
+                if (created.isDirectory || created.mkdir()) { folder = created } else reload++
+            }
+        }
+    }
+    AlertDialog(onDismissRequest = dismiss, icon = { FolderGlyph(34.dp) }, title = { Text("Choose destination folder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(folder.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (canGoUp) TextButton(onClick = { parent?.let { folder = it } }) { Text("Up one level") }
+                    TextButton(onClick = { creating = true }) { Text("New folder\u2026") }
+                }
+                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                    when {
+                        failed -> Text("Cannot read this folder. Check that storage access (All files access) is allowed.", style = MaterialTheme.typography.bodySmall)
+                        children.isEmpty() -> Text("No sub-folders here.", style = MaterialTheme.typography.bodySmall)
+                        else -> children.forEach { child ->
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { folder = child }.padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                FolderGlyph(22.dp)
+                                Spacer(Modifier.width(10.dp))
+                                Text(child.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { select(folder) }) { Text("Use this folder") } },
+        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
+}
+

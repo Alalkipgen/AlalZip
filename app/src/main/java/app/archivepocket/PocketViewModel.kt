@@ -210,17 +210,30 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             mutable.update { state -> state.copy(clipboard = emptyList()) }
         }
     }
-    /** Creates the ZIP inside the folder currently shown. */
-    fun zip(name: String, password: CharArray?) {
-        val entries = selected(); val destination = state.value.folders.lastOrNull()
+    /** Creates the ZIP inside [target] when given, otherwise inside the folder currently shown. */
+    fun zip(name: String, password: CharArray?, target: File? = null) {
+        val entries = selected(); val destination = resolveDestination(target)
         if (destination == null || entries.isEmpty()) { password?.fill('\u0000'); return }
         execute("Create ZIP", password) { repository.zip(entries, destination, name, password, it, ::confirm) }
     }
-    /** Extracts the selected archive into a new sub-folder of the folder currently shown. */
-    fun extract(name: String, password: CharArray?) {
-        val source = selected().singleOrNull(); val destination = state.value.folders.lastOrNull()
+    /** Extracts the selected archive into a new sub-folder of [target], defaulting to the folder currently shown. */
+    fun extract(name: String, password: CharArray?, target: File? = null) {
+        val source = selected().singleOrNull(); val destination = resolveDestination(target)
         if (source == null || destination == null) { password?.fill('\u0000'); return }
         runExtract(source, destination, name, password)
+    }
+    /**
+     * Chosen destinations must be readable folders inside shared storage; anything else falls back to
+     * the folder currently shown so an operation can never write outside the browsable tree.
+     */
+    private fun resolveDestination(target: File?): File? {
+        val current = state.value.folders.lastOrNull()
+        if (target == null) return current
+        val rootPath = runCatching { root.canonicalPath }.getOrElse { root.absolutePath }
+        val targetPath = runCatching { target.canonicalPath }.getOrElse { target.absolutePath }
+        val inside = targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)
+        if (!inside || !target.isDirectory) { message("Destination folder is not available; using the current folder."); return current }
+        return target
     }
     private fun runExtract(source: Entry, destination: File, name: String, password: CharArray?) {
         execute("Extract archive", password, { wrong -> PasswordRequest(source, destination, folderName = name, wrongPassword = wrong) }) {
@@ -228,8 +241,8 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     /** RAR-style "Extract here": archive contents land directly in the folder currently shown. */
-    fun extractHere(password: CharArray?) {
-        val source = selected().singleOrNull(); val destination = state.value.folders.lastOrNull()
+    fun extractHere(password: CharArray?, target: File? = null) {
+        val source = selected().singleOrNull(); val destination = resolveDestination(target)
         if (source == null || destination == null) { password?.fill('\u0000'); return }
         runExtractHere(source, destination, password)
     }
