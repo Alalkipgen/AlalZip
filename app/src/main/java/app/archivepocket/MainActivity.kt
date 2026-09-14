@@ -77,6 +77,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -116,9 +119,31 @@ private val Indigo = Color(0xFF4A47C8)
 private val IndigoDeep = Color(0xFF2B2870)
 private val IndigoLight = Color(0xFF7C6CF0)
 private val Amber = Color(0xFFFFB300)        // accent taken from the launcher icon's zipper slider
+private val AmberDark = Color(0xFFFF8F00)
 private val FolderBlue = Color(0xFF63B3FF)
 private val FolderBlueDark = Color(0xFF1C7BE0)
 private val UpGreen = Color(0xFF34C759)
+
+// Brand wordmark uses the same serif italic voice as the launcher icon; the rest of the UI is a clean sans.
+private val Brand = FontFamily.Serif
+private val UiFont = FontFamily.SansSerif
+private val AppTypography = Typography(
+    headlineSmall = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.Bold, fontSize = 23.sp, lineHeight = 29.sp),
+    titleLarge = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 26.sp),
+    titleMedium = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 23.sp, letterSpacing = 0.1.sp),
+    titleSmall = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp),
+    bodyLarge = TextStyle(fontFamily = UiFont, fontSize = 16.sp, lineHeight = 22.sp),
+    bodyMedium = TextStyle(fontFamily = UiFont, fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontFamily = UiFont, fontSize = 12.5.sp, lineHeight = 17.5.sp, letterSpacing = 0.15.sp),
+    labelLarge = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, letterSpacing = 0.3.sp),
+    labelMedium = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.4.sp),
+    labelSmall = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 0.4.sp)
+)
+
+// One rounded language for every prompt box, card and input in the app.
+private val DialogShape = RoundedCornerShape(28.dp)
+private val FieldShape = RoundedCornerShape(16.dp)
+private val CardShape = RoundedCornerShape(20.dp)
 
 private fun fileSize(bytes: Long): String = when {
     bytes >= 1024L * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
@@ -272,57 +297,59 @@ private fun rememberThumbnail(file: File, modified: Long, kind: FileKind): Image
 private fun FolderGlyph(size: Dp, up: Boolean = false) {
     Canvas(Modifier.size(size)) {
         val w = this.size.width; val h = this.size.height
-        drawRoundRect(FolderBlueDark, Offset(0f, h * 0.16f), Size(w * 0.46f, h * 0.2f), CornerRadius(w * 0.08f))
-        drawRoundRect(Brush.verticalGradient(listOf(FolderBlue, FolderBlueDark)), Offset(0f, h * 0.26f), Size(w, h * 0.6f), CornerRadius(w * 0.08f))
-        drawRoundRect(Color.White.copy(alpha = 0.35f), Offset(w * 0.06f, h * 0.3f), Size(w * 0.88f, h * 0.08f), CornerRadius(w * 0.04f))
+        // Back tab, then a softly rounded body with a light sheen: reads well from 18 dp up to 96 dp.
+        drawRoundRect(FolderBlueDark, Offset(w * 0.06f, h * 0.13f), Size(w * 0.44f, h * 0.26f), CornerRadius(w * 0.1f))
+        drawRoundRect(Brush.verticalGradient(listOf(FolderBlue, FolderBlueDark)), Offset(w * 0.03f, h * 0.25f), Size(w * 0.94f, h * 0.6f), CornerRadius(w * 0.16f))
+        drawRoundRect(Color.White.copy(alpha = 0.26f), Offset(w * 0.11f, h * 0.31f), Size(w * 0.78f, h * 0.13f), CornerRadius(w * 0.07f))
         if (up) {
-            val stroke = w * 0.13f
-            drawLine(UpGreen, Offset(w * 0.7f, h * 0.8f), Offset(w * 0.7f, h * 0.3f), stroke, StrokeCap.Round)
-            drawLine(UpGreen, Offset(w * 0.5f, h * 0.5f), Offset(w * 0.7f, h * 0.3f), stroke, StrokeCap.Round)
-            drawLine(UpGreen, Offset(w * 0.9f, h * 0.5f), Offset(w * 0.7f, h * 0.3f), stroke, StrokeCap.Round)
+            val center = Offset(w * 0.73f, h * 0.64f); val radius = w * 0.21f
+            drawCircle(Color.White, radius, center)
+            val stroke = w * 0.085f
+            drawLine(UpGreen, Offset(center.x, center.y + radius * 0.5f), Offset(center.x, center.y - radius * 0.52f), stroke, StrokeCap.Round)
+            drawLine(UpGreen, Offset(center.x - radius * 0.44f, center.y - radius * 0.06f), Offset(center.x, center.y - radius * 0.54f), stroke, StrokeCap.Round)
+            drawLine(UpGreen, Offset(center.x + radius * 0.44f, center.y - radius * 0.06f), Offset(center.x, center.y - radius * 0.54f), stroke, StrokeCap.Round)
         }
     }
 }
 
-/** Colourful "stacked books with a strap" glyph used for archives, like classic desktop archivers. */
+/** Archive glyph that mirrors the launcher icon: violet tile, white zipper, amber slider. */
 @Composable
 private fun ArchiveGlyph(size: Dp) {
     Canvas(Modifier.size(size)) {
         val w = this.size.width; val h = this.size.height
-        drawRoundRect(Color(0xFFFDD835), Offset(w * 0.04f, h * 0.1f), Size(w * 0.26f, h * 0.8f), CornerRadius(w * 0.05f))
-        drawRoundRect(Color(0xFFE53935), Offset(w * 0.32f, h * 0.06f), Size(w * 0.34f, h * 0.88f), CornerRadius(w * 0.05f))
-        drawRoundRect(Color(0xFF1E88E5), Offset(w * 0.68f, h * 0.1f), Size(w * 0.28f, h * 0.8f), CornerRadius(w * 0.05f))
-        drawRect(Color(0xFF43A047), Offset(w * 0.04f, h * 0.72f), Size(w * 0.26f, h * 0.18f))
-        drawRect(Color(0xFF7E57C2), Offset(w * 0.68f, h * 0.1f), Size(w * 0.28f, h * 0.16f))
-        drawRect(Color(0xFF8D6E63), Offset(0f, h * 0.36f), Size(w, h * 0.26f))
-        drawRect(Color(0xFF5D4037), Offset(0f, h * 0.36f), Size(w, h * 0.04f))
-        drawRect(Color(0xFF5D4037), Offset(0f, h * 0.58f), Size(w, h * 0.04f))
-        drawRoundRect(Color(0xFFECEFF1), Offset(w * 0.38f, h * 0.32f), Size(w * 0.24f, h * 0.34f), CornerRadius(w * 0.05f))
-        drawRect(Color(0xFF8D6E63), Offset(w * 0.44f, h * 0.4f), Size(w * 0.12f, h * 0.18f))
+        drawRoundRect(Brush.linearGradient(listOf(IndigoDeep, IndigoLight)), Offset(0f, 0f), Size(w, h), CornerRadius(w * 0.26f))
+        val tape = h * 0.05f
+        val top = h * 0.34f
+        val bottom = h * 0.62f
+        drawRoundRect(Color.White, Offset(w * 0.12f, top), Size(w * 0.56f, tape), CornerRadius(w * 0.02f))
+        drawRoundRect(Color.White, Offset(w * 0.12f, bottom), Size(w * 0.56f, tape), CornerRadius(w * 0.02f))
+        var x = w * 0.14f
+        while (x + w * 0.05f <= w * 0.67f) {
+            drawRect(Color.White, Offset(x, top + tape), Size(w * 0.05f, h * 0.09f))
+            drawRect(Color.White, Offset(x + w * 0.055f, bottom - h * 0.09f), Size(w * 0.05f, h * 0.09f))
+            x += w * 0.11f
+        }
+        drawRoundRect(Amber, Offset(w * 0.66f, h * 0.31f), Size(w * 0.22f, h * 0.36f), CornerRadius(w * 0.06f))
+        drawRoundRect(AmberDark, Offset(w * 0.73f, h * 0.65f), Size(w * 0.08f, h * 0.18f), CornerRadius(w * 0.03f))
     }
 }
 
-/** A coloured page with folded corner and a type label (PDF, DOC, APK, ...). */
+/** A rounded colour tile carrying the file-type label (PDF, DOC, APK, ...). */
 @Composable
 private fun TypeBadge(kind: FileKind, size: Dp) {
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val w = this.size.width; val h = this.size.height
-            val page = Path().apply {
-                moveTo(w * 0.16f, h * 0.04f); lineTo(w * 0.6f, h * 0.04f); lineTo(w * 0.84f, h * 0.28f)
-                lineTo(w * 0.84f, h * 0.96f); lineTo(w * 0.16f, h * 0.96f); close()
-            }
-            drawPath(page, Brush.verticalGradient(listOf(kind.color.copy(alpha = 0.92f), kind.color)))
-            val fold = Path().apply { moveTo(w * 0.6f, h * 0.04f); lineTo(w * 0.6f, h * 0.28f); lineTo(w * 0.84f, h * 0.28f); close() }
-            drawPath(fold, Color.White.copy(alpha = 0.5f))
-            drawRoundRect(Color.Black.copy(alpha = 0.22f), Offset(w * 0.1f, h * 0.56f), Size(w * 0.8f, h * 0.28f), CornerRadius(w * 0.06f))
+            drawRoundRect(Brush.verticalGradient(listOf(kind.color, kind.color.copy(alpha = 0.72f))),
+                Offset(w * 0.05f, h * 0.05f), Size(w * 0.9f, h * 0.9f), CornerRadius(w * 0.26f))
+            drawRoundRect(Color.White.copy(alpha = 0.22f), Offset(w * 0.13f, h * 0.12f), Size(w * 0.74f, h * 0.22f), CornerRadius(w * 0.11f))
             if (kind == FileKind.AUDIO) {
-                drawCircle(Color.White.copy(alpha = 0.9f), w * 0.07f, Offset(w * 0.4f, h * 0.44f))
-                drawLine(Color.White.copy(alpha = 0.9f), Offset(w * 0.46f, h * 0.44f), Offset(w * 0.46f, h * 0.2f), w * 0.04f, StrokeCap.Round)
+                drawCircle(Color.White.copy(alpha = 0.95f), w * 0.07f, Offset(w * 0.42f, h * 0.42f))
+                drawLine(Color.White.copy(alpha = 0.95f), Offset(w * 0.48f, h * 0.42f), Offset(w * 0.48f, h * 0.2f), w * 0.045f, StrokeCap.Round)
             }
         }
-        Text(kind.label, Modifier.offset(y = size * 0.2f), color = Color.White, fontWeight = FontWeight.Bold,
-            fontSize = if (kind.label.length > 3) 8.sp else 10.sp, maxLines = 1)
+        Text(kind.label, Modifier.offset(y = size * 0.17f), color = Color.White, fontWeight = FontWeight.Bold,
+            fontSize = if (kind.label.length > 3) 9.sp else 11.sp, letterSpacing = 0.4.sp, maxLines = 1)
     }
 }
 
@@ -357,25 +384,26 @@ private fun GridGlyph(grid: Boolean, tint: Color) {
     }
 }
 
-/** Toolbar glyph: an archive with a "+" (create) or an up arrow (extract) badge, drawn without extra icon dependencies. */
+/** Toolbar glyph: a zipper tile with a "+" (create) or up-arrow (extract) badge in the amber accent. */
 @Composable
 private fun ArchiveIcon(extract: Boolean, enabled: Boolean, description: String, onClick: () -> Unit) {
     val tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f)
+    val badge = Amber.copy(alpha = if (enabled) 1f else 0.4f)
     IconButton(onClick = onClick, enabled = enabled) {
-        Canvas(Modifier.size(26.dp).semantics { contentDescription = description }) {
+        Canvas(Modifier.size(27.dp).semantics { contentDescription = description }) {
             val w = size.width; val h = size.height
-            drawRoundRect(tint, Offset(0f, h * 0.08f), Size(w * 0.66f, h * 0.84f), CornerRadius(w * 0.08f))
-            for (i in 0..3) drawRect(Indigo, Offset(w * 0.23f, h * (0.2f + i * 0.16f)), Size(w * 0.2f, h * 0.07f))
-            val c = Offset(w * 0.74f, h * 0.72f); val r = w * 0.25f
-            drawCircle(tint, r, c)
-            val stroke = w * 0.09f
+            drawRoundRect(tint, Offset(0f, h * 0.06f), Size(w * 0.64f, h * 0.88f), CornerRadius(w * 0.18f))
+            for (i in 0..3) drawRect(IndigoDeep, Offset(w * 0.26f, h * (0.2f + i * 0.16f)), Size(w * 0.14f, h * 0.08f))
+            val c = Offset(w * 0.74f, h * 0.73f); val r = w * 0.26f
+            drawCircle(badge, r, c)
+            val stroke = w * 0.1f
             if (extract) {
-                drawLine(Indigo, Offset(c.x, c.y + r * 0.5f), Offset(c.x, c.y - r * 0.5f), stroke, StrokeCap.Round)
-                drawLine(Indigo, Offset(c.x - r * 0.45f, c.y - r * 0.05f), Offset(c.x, c.y - r * 0.5f), stroke, StrokeCap.Round)
-                drawLine(Indigo, Offset(c.x + r * 0.45f, c.y - r * 0.05f), Offset(c.x, c.y - r * 0.5f), stroke, StrokeCap.Round)
+                drawLine(IndigoDeep, Offset(c.x, c.y + r * 0.52f), Offset(c.x, c.y - r * 0.52f), stroke, StrokeCap.Round)
+                drawLine(IndigoDeep, Offset(c.x - r * 0.46f, c.y - r * 0.06f), Offset(c.x, c.y - r * 0.54f), stroke, StrokeCap.Round)
+                drawLine(IndigoDeep, Offset(c.x + r * 0.46f, c.y - r * 0.06f), Offset(c.x, c.y - r * 0.54f), stroke, StrokeCap.Round)
             } else {
-                drawLine(Indigo, Offset(c.x, c.y + r * 0.5f), Offset(c.x, c.y - r * 0.5f), stroke, StrokeCap.Round)
-                drawLine(Indigo, Offset(c.x - r * 0.5f, c.y), Offset(c.x + r * 0.5f, c.y), stroke, StrokeCap.Round)
+                drawLine(IndigoDeep, Offset(c.x, c.y + r * 0.52f), Offset(c.x, c.y - r * 0.52f), stroke, StrokeCap.Round)
+                drawLine(IndigoDeep, Offset(c.x - r * 0.52f, c.y), Offset(c.x + r * 0.52f, c.y), stroke, StrokeCap.Round)
             }
         }
     }
@@ -485,7 +513,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
         }
     }
 
-    MaterialTheme(colorScheme = scheme) {
+    MaterialTheme(colorScheme = scheme, typography = AppTypography) {
         Column(Modifier.fillMaxSize().background(scheme.background)) {
             // ---- Top toolbar: browse mode / selection mode ----
             Box(
@@ -519,7 +547,8 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             }
                         }
                         Column(Modifier.weight(1f)) {
-                            Text("Alal Zip", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp, maxLines = 1)
+                            Text("Alal Zip", color = Color.White, fontFamily = Brand, fontStyle = FontStyle.Italic,
+                                fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                             Text(if (atRoot || !hasFolder) "Internal storage" else state.folders.last().name, color = Color.White.copy(alpha = 0.82f),
                                 style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -711,7 +740,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
         // ---- Dialogs ----
         state.message?.let { text ->
-            AlertDialog(onDismissRequest = { model.message(null) }, icon = { Icon(Icons.Filled.Info, null) }, title = { Text("Alal Zip") },
+            AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { model.message(null) }, icon = { Icon(Icons.Filled.Info, null) }, title = { Text("Alal Zip") },
                 text = { Text(text) }, confirmButton = { TextButton(onClick = { model.message(null) }) { Text("OK") } })
         }
         state.archivePreview?.let { preview ->
@@ -724,19 +753,19 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
         state.passwordRequest?.let { request ->
             // RAR-style: extraction/opening was attempted without a password first; ask only when the archive needs one.
             var password by remember(request) { mutableStateOf("") }
-            AlertDialog(onDismissRequest = { password = ""; model.cancelPassword() }, icon = { ArchiveGlyph(40.dp) },
+            AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { password = ""; model.cancelPassword() }, icon = { ArchiveGlyph(40.dp) },
                 title = { Text(if (request.wrongPassword) "Wrong password" else "Password required") },
                 text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(if (request.wrongPassword) "That password was rejected for \u201c${request.source.name}\u201d. Try again."
                         else "\u201c${request.source.name}\u201d is encrypted. Enter the archive password to continue.", style = MaterialTheme.typography.bodyMedium)
-                    OutlinedTextField(value = password, onValueChange = { password = it }, singleLine = true, label = { Text("Archive password") }, shape = RoundedCornerShape(12.dp),
+                    OutlinedTextField(value = password, onValueChange = { password = it }, singleLine = true, label = { Text("Archive password") }, shape = FieldShape,
                         visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
                 } },
                 confirmButton = { TextButton(enabled = password.isNotEmpty(), onClick = { val chars = password.toCharArray(); password = ""; model.answerPassword(chars) }) { Text("Unlock") } },
                 dismissButton = { TextButton(onClick = { password = ""; model.cancelPassword() }) { Text("Cancel") } })
         }
         state.collision?.let { name ->
-            AlertDialog(onDismissRequest = { model.collisionAnswer(false) }, title = { Text("Name already exists") },
+            AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { model.collisionAnswer(false) }, title = { Text("Name already exists") },
                 text = { Text("Replace \u201c$name\u201d? The existing item will be renamed to AP-backup-\u2026 and kept, not deleted. If the operation fails, the backup stays.") },
                 confirmButton = { TextButton(onClick = { model.collisionAnswer(true) }) { Text("Keep backup & replace") } },
                 dismissButton = { TextButton(onClick = { model.collisionAnswer(false) }) { Text("Cancel operation") } })
@@ -744,12 +773,12 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
         when (dialog) {
             "mkdir", "rename" -> NameDialog(if (dialog == "mkdir") "New folder" else "Rename", if (dialog == "rename") selected.firstOrNull()?.name ?: "" else "",
                 dismiss = { dialog = null }) { name -> if (dialog == "mkdir") model.mkdir(name) else model.rename(name); dialog = null }
-            "delete" -> AlertDialog(onDismissRequest = { dialog = null }, icon = { Icon(Icons.Filled.Delete, null) }, title = { Text("Delete ${selected.size} item(s)?") },
+            "delete" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, icon = { Icon(Icons.Filled.Delete, null) }, title = { Text("Delete ${selected.size} item(s)?") },
                 text = { Text("This permanently deletes the selected files and all contents of selected folders. There is no undo.") },
                 confirmButton = { TextButton(onClick = { dialog = null; model.delete() }) { Text("Delete permanently", color = MaterialTheme.colorScheme.error) } },
                 dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } })
             "details" -> selected.singleOrNull()?.let { entry ->
-                AlertDialog(onDismissRequest = { dialog = null },
+                AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null },
                     icon = { FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 56.dp) },
                     title = { Text(entry.name, maxLines = 3, overflow = TextOverflow.Ellipsis) },
                     text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -773,7 +802,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                 if (dialog == "zip") model.zip(name, password, destination) else model.extract(name, password, destination)
                 dialog = null
             }
-            "sort" -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text("Sort by") },
+            "sort" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, title = { Text("Sort by") },
                 text = {
                     Column {
                         SORT_NAMES.forEachIndexed { index, label ->
@@ -793,7 +822,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     }
                 },
                 confirmButton = { TextButton(onClick = { dialog = null }) { Text("Done") } })
-            "about" -> AlertDialog(onDismissRequest = { dialog = null }, icon = { ArchiveGlyph(48.dp) }, title = { Text("Alal Zip 0.4.1") },
+            "about" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, icon = { ArchiveGlyph(48.dp) }, title = { Text("Alal Zip 0.5.0") },
                 text = { Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("Offline file manager and archiver: thumbnails, file-type icons, list/grid views, quick-access folders, secure Open with\u2026 and Share, plus folder-style ZIP/RAR browsing. Encrypted archives ask for their password only when needed, like RAR. Opening an archive item extracts only that member to private cache (512 MiB viewing limit), never the entire archive. ZIP/AES: Zip4j 2.11.6 (Apache-2.0). RAR extraction: Junrar 8.1.1 (UnRAR license). No RAR creation, split archives or links. 2 GiB extraction / 10,000 entries / 64 MiB RAR dictionary limits. Keep the app in the foreground during operations.")
                     Text("\nJunrar code may not be used to develop a RAR (WinRAR) compatible archiver. Copyright Alexander Roshal. Full third-party notices are bundled in app assets and source licenses.")
@@ -879,7 +908,12 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
     Dialog(onDismissRequest = ::goBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Indigo, IndigoLight))).statusBarsPadding().height(60.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                        .background(Brush.linearGradient(listOf(IndigoDeep, Indigo, IndigoLight)))
+                        .statusBarsPadding().height(64.dp).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     IconButton(onClick = ::goBack, enabled = !busy) { Icon(Icons.Filled.Close, "Close archive", tint = Color.White) }
                     Column(Modifier.weight(1f)) {
                         Text(preview.archiveName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -888,9 +922,12 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
                     ArchiveIcon(extract = true, enabled = !busy, description = "Extract all") { extractAll() }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), shape = RoundedCornerShape(14.dp),
-                    singleLine = true, label = { Text("Search this archive folder") }, enabled = !busy, leadingIcon = { Icon(Icons.Filled.Search, null) })
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.secondaryContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), shape = RoundedCornerShape(26.dp),
+                    singleLine = true, placeholder = { Text("Search this archive folder") }, enabled = !busy,
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
+                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
+                    colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.secondaryContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     ArchiveGlyph(18.dp)
                     Text("  " + preview.archiveName + "/" + folder, maxLines = 1, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
@@ -931,8 +968,8 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
     }
     passwordPath?.let { path ->
         var password by remember(path) { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { password = ""; passwordPath = null }, title = { Text("Open encrypted file") },
-            text = { OutlinedTextField(password, { password = it }, singleLine = true, label = { Text("Archive password") },
+        AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { password = ""; passwordPath = null }, title = { Text("Open encrypted file") },
+            text = { OutlinedTextField(password, { password = it }, singleLine = true, label = { Text("Archive password") }, shape = FieldShape,
                 visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)) },
             confirmButton = { TextButton(onClick = {
                 val chars = password.takeIf { it.isNotEmpty() }?.toCharArray(); password = ""; passwordPath = null; openItem(path, chars)
@@ -950,8 +987,8 @@ private fun MenuItem(text: String, enabled: Boolean, action: () -> Unit) {
 @Composable
 private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, submit: (String) -> Unit) {
     var name by remember { mutableStateOf(initial) }
-    AlertDialog(onDismissRequest = dismiss, title = { Text(title) },
-        text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(12.dp)) },
+    AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = dismiss, title = { Text(title) },
+        text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, shape = FieldShape) },
         confirmButton = { TextButton(onClick = { submit(name) }, enabled = name.isNotBlank()) { Text("Save") } },
         dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
 }
@@ -972,18 +1009,18 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, initialNam
         }
         return
     }
-    AlertDialog(onDismissRequest = { close() }, shape = RoundedCornerShape(26.dp), icon = { ArchiveGlyph(44.dp) },
+    AlertDialog(onDismissRequest = { close() }, shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, icon = { ArchiveGlyph(44.dp) },
         title = { Text(if (create) "Create ZIP" else "Extract ZIP / RAR", fontWeight = FontWeight.Bold) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
                 Text("Destination: ${destination.path}", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { picking = true }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("Change folder\u2026") }
             }
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(if (create) "ZIP file name" else "Output folder name") }, singleLine = true, shape = RoundedCornerShape(12.dp))
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(if (create) "ZIP file name" else "Output folder name") }, singleLine = true, shape = FieldShape)
             if (create) {
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password (optional)") }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password (optional)") }, singleLine = true, shape = FieldShape,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                OutlinedTextField(value = repeat, onValueChange = { repeat = it }, label = { Text("Repeat password") }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                OutlinedTextField(value = repeat, onValueChange = { repeat = it }, label = { Text("Repeat password") }, singleLine = true, shape = FieldShape,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
             }
             Text(if (create) "The ZIP is created in the destination folder. A non-empty password enables AES-256. File names are not hidden. Forgotten passwords cannot be recovered."
@@ -1025,7 +1062,7 @@ private fun FolderPickerDialog(start: File, root: File, dismiss: () -> Unit, sel
             }
         }
     }
-    AlertDialog(onDismissRequest = dismiss, shape = RoundedCornerShape(26.dp), icon = { FolderGlyph(38.dp) },
+    AlertDialog(onDismissRequest = dismiss, shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, icon = { FolderGlyph(38.dp) },
         title = { Text("Choose destination folder", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

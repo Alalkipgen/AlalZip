@@ -23,27 +23,30 @@ ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "app/src/main/res"
 FONT_DIRS = [Path("/usr/share/fonts"), Path.home() / ".fonts", Path("/Library/Fonts"), Path("C:/Windows/Fonts")]
 
-# (font file, text, cap height dp, baseline y dp, tracking dp)
+# (font file, text, cap height dp, baseline y dp, tracking dp, colour)
 WORDS = [
-    ("LiberationSerif-BoldItalic.ttf", "Alal", 18.0, 51.0, 0.0),
-    ("LiberationSans-Bold.ttf", "ZIP", 8.6, 79.5, 5.0),
+    ("LiberationSerif-BoldItalic.ttf", "Alal", 18.0, 51.0, 0.0, "#FFFFFF"),
+    ("LiberationSans-Bold.ttf", "ZIP", 8.6, 79.5, 5.0, "#FFC64D"),
 ]
 WHITE, AMBER, AMBER_DARK = "#FFFFFF", "#FFB300", "#FF8F00"
+# Adaptive background: the violet brand gradient also used by the app's top bar.
+BG_STOPS = (("0", "#2B1B6E"), ("0.55", "#4B3BD1"), ("1", "#7C5CF0"))
 
 
 def zipper():
     """Zipper tape, interlocking teeth and an amber slider between the words: (x0, y0, x1, y1, colour)."""
     shapes = []
-    left, right = 29.0, 64.6
-    shapes.append((left, 54.0, right, 55.2, WHITE))             # upper tape
-    shapes.append((left, 63.0, right, 64.2, WHITE))             # lower tape
-    x = left + 0.4
-    while x + 2.0 <= right:
-        shapes.append((x, 55.2, x + 2.0, 58.6, WHITE))          # upper tooth
-        shapes.append((x + 2.0, 59.6, x + 4.0, 63.0, WHITE))    # lower tooth, offset half a pitch
-        x += 4.0
-    shapes.append((65.4, 54.0, 74.2, 64.2, AMBER))              # slider body
-    shapes.append((68.6, 64.2, 71.0, 69.2, AMBER_DARK))         # pull tab
+    left, right = 29.0, 64.4
+    shapes.append((left, 54.4, right, 55.4, WHITE))             # upper tape
+    shapes.append((left, 62.8, right, 63.8, WHITE))             # lower tape
+    x = left + 0.6
+    while x + 1.6 <= right:
+        shapes.append((x, 55.4, x + 1.6, 58.5, WHITE))          # upper tooth
+        shapes.append((x + 1.8, 59.7, x + 3.4, 62.8, WHITE))    # lower tooth, offset half a pitch
+        x += 3.6
+    shapes.append((64.4, 57.2, 66.6, 61.0, AMBER))              # slider neck
+    shapes.append((66.6, 54.0, 74.2, 64.2, AMBER))              # slider body
+    shapes.append((68.8, 64.2, 71.4, 69.8, AMBER_DARK))         # pull tab
     return shapes
 
 
@@ -91,13 +94,12 @@ def layout(font_file, text, cap_dp, baseline, tracking):
 
 
 def build():
-    paths, corners, raster = [], [], []
-    for font_file, text, cap_dp, baseline, tracking in WORDS:
+    shapes, corners, raster = [], [], []
+    for font_file, text, cap_dp, baseline, tracking, colour in WORDS:
         data, word_corners, font_path, em_dp, left = layout(font_file, text, cap_dp, baseline, tracking)
-        paths.append(data)
+        shapes.append((data, colour))
         corners += word_corners
-        raster.append((font_path, text, em_dp, left, baseline, tracking))
-    shapes = [(path, WHITE) for path in paths]
+        raster.append((font_path, text, em_dp, left, baseline, tracking, colour))
     for a, b, c, d, colour in RECTS:
         shapes.append((f"M{number(a)},{number(b)}H{number(c)}V{number(d)}H{number(a)}Z", colour))
         corners += [(a, b), (c, b), (a, d), (c, d)]
@@ -119,10 +121,18 @@ def main():
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp"'
         ' android:viewportWidth="108" android:viewportHeight="108">\n' + body + "</vector>\n")
+    items = "".join(f'            <item android:offset="{offset}" android:color="{colour}" />\n' for offset, colour in BG_STOPS)
     (drawable / "ic_launcher_background.xml").write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'
-        '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">\n'
-        '    <solid android:color="#000000" />\n</shape>\n')
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"'
+        ' android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">\n'
+        '    <path android:pathData="M0,0h108v108h-108z">\n'
+        '        <aapt:attr name="android:fillColor">\n'
+        '            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="108" android:endY="108">\n'
+        + items +
+        '            </gradient>\n'
+        '        </aapt:attr>\n'
+        '    </path>\n</vector>\n')
 
     # Legacy PNGs (only used below API 26; kept consistent with the vector). Written with
     # filter-0 rows so they stay trivially verifiable by tools/check_source.py.
@@ -131,11 +141,21 @@ def main():
         image = Image.new("RGBA", (big, big), (0, 0, 0, 255))
         draw = ImageDraw.Draw(image)
         k = big / 108
-        for font_path, text, em_dp, left, baseline, tracking in raster:
+        stops = [(float(offset), tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))) for offset, colour in BG_STOPS]
+        for diagonal in range(2 * big - 1):
+            t = diagonal / (2 * big - 2)
+            lower = max(i for i in range(len(stops)) if stops[i][0] <= t or i == 0)
+            upper = min(len(stops) - 1, lower + 1)
+            span = (stops[upper][0] - stops[lower][0]) or 1.0
+            ratio = min(max((t - stops[lower][0]) / span, 0.0), 1.0)
+            colour = tuple(int(round(stops[lower][1][c] + (stops[upper][1][c] - stops[lower][1][c]) * ratio)) for c in range(3))
+            draw.line((0, diagonal, diagonal, 0), fill=colour + (255,))
+        for font_path, text, em_dp, left, baseline, tracking, colour in raster:
+            rgb = tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))
             font = ImageFont.truetype(str(font_path), int(round(em_dp * k)))
             x = left * k
             for char in text:
-                draw.text((x, baseline * k), char, font=font, fill=(255, 255, 255, 255), anchor="ls")
+                draw.text((x, baseline * k), char, font=font, fill=rgb + (255,), anchor="ls")
                 x += font.getlength(char) + tracking * k
         for a, b, c, d, colour in RECTS:
             rgb = tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))

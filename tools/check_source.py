@@ -98,10 +98,17 @@ class SourceChecks(unittest.TestCase):
             self.assertEqual("adaptive-icon", icon.tag)
             for layer in ("background", "foreground"):
                 self.assertEqual("@drawable/ic_launcher_" + layer, icon.find(layer).get(android + "drawable"))
-        background = ET.parse(res / "drawable/ic_launcher_background.xml")
-        self.assertEqual("#000000", background.find("solid").get(android + "color"))
+        # Background is the violet brand gradient; foreground keeps white lettering plus the amber accent.
+        background = ET.parse(res / "drawable/ic_launcher_background.xml").getroot()
+        self.assertEqual("vector", background.tag)
+        gradient = next(background.iter("gradient"), None)
+        self.assertIsNotNone(gradient)
+        self.assertEqual(["#2B1B6E", "#4B3BD1", "#7C5CF0"], [item.get(android + "color") for item in gradient.findall("item")])
         foreground = ET.parse(res / "drawable/ic_launcher_foreground.xml")
         self.assertEqual("#FFFFFF", foreground.find("path").get(android + "fillColor"))
+        fills = {path.get(android + "fillColor") for path in foreground.findall("path")}
+        self.assertIn("#FFB300", fills)
+        self.assertIn("#FFC64D", fills)
         try:
             from generate_icons import CORNERS  # needs fonttools + pillow; skipped when unavailable
         except ImportError:
@@ -125,7 +132,8 @@ class SourceChecks(unittest.TestCase):
                 self.assertEqual(size*(1+size*4), len(raw))
                 pixels = b"".join(raw[y*(1+size*4)+1:(y+1)*(1+size*4)] for y in range(size))
                 self.assertIn(b"\xff\xff\xff\xff", pixels)
-                self.assertEqual(b"\x00\x00\x00\xff", pixels[:4])
+                # Legacy PNGs (unused from API 26 on, where the adaptive vectors apply) stay fully opaque.
+                self.assertEqual(255, pixels[3])
 
     def test_ci_and_portable_build_configuration(self):
         workflow = (ROOT / ".github/workflows/android.yml").read_text()
