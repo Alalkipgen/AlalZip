@@ -2,6 +2,10 @@ name: Alal Zip APK (debug + optimized release)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
 
 permissions:
   contents: read

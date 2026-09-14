@@ -25,6 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -111,12 +112,13 @@ class MainActivity : ComponentActivity() {
 }
 
 // ---------------------------------------------------------------- palette & formatting
-private val Indigo = Color(0xFF3949AB)
-private val IndigoDeep = Color(0xFF283593)
-private val IndigoLight = Color(0xFF5C6BC0)
-private val FolderBlue = Color(0xFF4FA3F7)
-private val FolderBlueDark = Color(0xFF1E88E5)
-private val UpGreen = Color(0xFF43A047)
+private val Indigo = Color(0xFF4A47C8)
+private val IndigoDeep = Color(0xFF2B2870)
+private val IndigoLight = Color(0xFF7C6CF0)
+private val Amber = Color(0xFFFFB300)        // accent taken from the launcher icon's zipper slider
+private val FolderBlue = Color(0xFF63B3FF)
+private val FolderBlueDark = Color(0xFF1C7BE0)
+private val UpGreen = Color(0xFF34C759)
 
 private fun fileSize(bytes: Long): String = when {
     bytes >= 1024L * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
@@ -409,11 +411,15 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
     var theme by rememberSaveable { mutableStateOf(0) }
     val dark = when (theme) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     val scheme = if (dark) darkColorScheme(
-        primary = Color(0xFF9FA8DA), secondary = Color(0xFF90CAF9), background = Color(0xFF111318), surface = Color(0xFF111318),
-        surfaceVariant = Color(0xFF1C1F27), secondaryContainer = Color(0xFF283047), onSecondaryContainer = Color(0xFFDCE1FF)
+        primary = Color(0xFFB3AEFF), onPrimary = Color(0xFF1B1840), secondary = Amber, tertiary = Color(0xFF7FD4C1),
+        background = Color(0xFF0E1015), surface = Color(0xFF0E1015), onSurface = Color(0xFFECEBF6),
+        surfaceVariant = Color(0xFF1A1D28), onSurfaceVariant = Color(0xFFB6B9CC),
+        secondaryContainer = Color(0xFF262A46), onSecondaryContainer = Color(0xFFE2E4FF), outlineVariant = Color(0xFF2C3040)
     ) else lightColorScheme(
-        primary = Indigo, secondary = FolderBlueDark, background = Color(0xFFF4F5FB), surface = Color(0xFFF4F5FB),
-        surfaceVariant = Color(0xFFE8EAF6), secondaryContainer = Color(0xFFE3E7FF), onSecondaryContainer = IndigoDeep
+        primary = Indigo, onPrimary = Color.White, secondary = Color(0xFFB07400), tertiary = Color(0xFF00897B),
+        background = Color(0xFFF5F5FC), surface = Color(0xFFF5F5FC), onSurface = Color(0xFF1A1B2A),
+        surfaceVariant = Color.White, onSurfaceVariant = Color(0xFF5A5D75),
+        secondaryContainer = Color(0xFFE6E6FF), onSecondaryContainer = IndigoDeep, outlineVariant = Color(0xFFDCDCEC)
     )
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -482,8 +488,11 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
     MaterialTheme(colorScheme = scheme) {
         Column(Modifier.fillMaxSize().background(scheme.background)) {
             // ---- Top toolbar: browse mode / selection mode ----
-            Box(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(if (selecting) IndigoDeep else Indigo, if (selecting) Indigo else IndigoLight)))) {
-                Row(Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .background(Brush.linearGradient(if (selecting) listOf(IndigoDeep, Indigo) else listOf(IndigoDeep, Indigo, IndigoLight)))
+            ) {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
                         IconButton(onClick = model::clearSelection) { Icon(Icons.Filled.Close, "Clear selection", tint = Color.White) }
                         Column(Modifier.weight(1f)) {
@@ -510,7 +519,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             }
                         }
                         Column(Modifier.weight(1f)) {
-                            Text("Alal Zip", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text("Alal Zip", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp, maxLines = 1)
                             Text(if (atRoot || !hasFolder) "Internal storage" else state.folders.last().name, color = Color.White.copy(alpha = 0.82f),
                                 style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -545,12 +554,14 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
             // ---- Content ----
             Column(Modifier.weight(1f).fillMaxWidth()) {
                 if (searching) OutlinedTextField(
-                    value = query, onValueChange = { query = it }, label = { Text("Search this folder") }, shape = RoundedCornerShape(14.dp),
-                    singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), enabled = enabled,
-                    leadingIcon = { Icon(Icons.Filled.Search, null) }
+                    value = query, onValueChange = { query = it }, placeholder = { Text("Search this folder") }, shape = RoundedCornerShape(26.dp),
+                    singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), enabled = enabled,
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
+                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
+                    colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant)
                 )
-                if (state.clipboard.isNotEmpty()) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                if (state.clipboard.isNotEmpty()) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
                     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${if (state.cut) "Move" else "Copy"} ${state.clipboard.size} item(s): open the destination folder, then Paste.",
                             Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -558,8 +569,9 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                         TextButton(onClick = model::clearClipboard) { Text("Clear") }
                     }
                 }
-                if (state.busy) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(14.dp)) {
-                    Column(Modifier.padding(12.dp)) {
+                if (state.busy) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
+                    Column(Modifier.padding(14.dp)) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
                         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -582,20 +594,24 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                                 " Nothing leaves your device: the app has no internet permission.",
                             Modifier.padding(vertical = 16.dp), textAlign = TextAlign.Center
                         )
-                        Button(onClick = requestAccess, shape = RoundedCornerShape(14.dp)) { Text("Allow storage access") }
+                        Button(onClick = requestAccess, shape = RoundedCornerShape(18.dp), contentPadding = PaddingValues(horizontal = 26.dp, vertical = 14.dp)) {
+                            Text("Allow storage access", fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 } else {
                     // ---- Storage / navigation header card ----
-                    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clickable(enabled = enabled && !atRoot) { model.back() },
-                        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clickable(enabled = enabled && !atRoot) { model.back() },
+                        shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
+                        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             FolderGlyph(40.dp, up = !atRoot)
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(if (atRoot) "Internal storage" else "Up one level", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                Text(if (atRoot) "Internal storage" else "Up one level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 val used = (state.total - state.free).coerceAtLeast(0)
                                 val fraction = if (state.total > 0) (used.toFloat() / state.total).coerceIn(0f, 1f) else 0f
-                                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).height(6.dp).clip(CircleShape),
-                                    color = if (fraction > 0.9f) Color(0xFFE53935) else MaterialTheme.colorScheme.primary)
+                                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(8.dp).clip(CircleShape),
+                                    color = if (fraction > 0.9f) Color(0xFFE53935) else MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.outlineVariant)
                                 Text("${storageSize(state.free)} free of ${storageSize(state.total)}  \u00b7  $folderCount folders, $fileCount files", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             IconButton(onClick = model::refresh, enabled = enabled) { Icon(Icons.Filled.Refresh, "Refresh") }
@@ -604,9 +620,11 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
                     if (visible.isEmpty() && !state.loading) {
                         Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                            FolderGlyph(72.dp)
-                            Text(if (query.isBlank()) "This folder is empty" else "No matching files", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.titleMedium)
-                            if (query.isBlank()) Text("Long-press the toolbar menu for New folder or Paste.", style = MaterialTheme.typography.bodySmall)
+                            FolderGlyph(84.dp)
+                            Text(if (query.isBlank()) "This folder is empty" else "No matching files", Modifier.padding(top = 14.dp),
+                                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            if (query.isBlank()) Text("Use the toolbar menu for New folder or Paste.", Modifier.padding(top = 4.dp),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else if (grid) LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 104.dp), modifier = Modifier.weight(1f), contentPadding = PaddingValues(start = 10.dp, end = 10.dp, bottom = 12.dp),
@@ -617,10 +635,12 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             val interaction = remember { MutableInteractionSource() }
                             Box {
                                 Column(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(if (checked) 1.5.dp else 1.dp,
+                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
                                         .entryGestures(enabled, state.selected, interaction, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
-                                        .padding(8.dp),
+                                        .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
@@ -639,12 +659,14 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                         items(visible, key = { it.path }) { entry ->
                             val checked = entry.path in state.selected
                             val interaction = remember { MutableInteractionSource() }
-                            Box(Modifier.fillMaxWidth()) {
+                            Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 3.dp)) {
                                 Row(
-                                    Modifier.fillMaxWidth()
-                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(if (checked) 1.5.dp else 1.dp,
+                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
                                         .entryGestures(enabled, state.selected, interaction, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
-                                        .padding(start = 14.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
+                                        .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 48.dp)
@@ -660,7 +682,6 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                                 }
                                 EntryMenu(entry, state.selected, state.clipboard.isNotEmpty(), enabled, contextPath == entry.path, { contextPath = null }, model, context) { dialog = it }
                             }
-                            HorizontalDivider(Modifier.padding(start = 76.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         }
                     }
                 }
@@ -668,7 +689,9 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
             // ---- Bottom breadcrumb path bar ----
             Row(
-                Modifier.fillMaxWidth().background(IndigoDeep).navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+                    .background(Brush.horizontalGradient(listOf(IndigoDeep, Indigo)))
+                    .navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (state.folders.isEmpty()) Text(model.root.path, color = Color.White, fontSize = 15.sp, maxLines = 1)
@@ -677,8 +700,8 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     if (index > 0) Icon(Icons.Filled.KeyboardArrowRight, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
                     Text(
                         if (index == 0) "Internal storage" else folder.name,
-                        Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled && !last) { model.jumpTo(index) }
-                            .background(if (last) Color.White.copy(alpha = 0.16f) else Color.Transparent).padding(horizontal = 8.dp, vertical = 3.dp),
+                        Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled && !last) { model.jumpTo(index) }
+                            .background(if (last) Color.White.copy(alpha = 0.22f) else Color.Transparent).padding(horizontal = 10.dp, vertical = 4.dp),
                         color = if (last) Color.White else Color.White.copy(alpha = 0.8f), fontSize = 15.sp, maxLines = 1,
                         fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal
                     )
@@ -949,7 +972,8 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, initialNam
         }
         return
     }
-    AlertDialog(onDismissRequest = { close() }, icon = { ArchiveGlyph(40.dp) }, title = { Text(if (create) "Create ZIP" else "Extract ZIP / RAR") },
+    AlertDialog(onDismissRequest = { close() }, shape = RoundedCornerShape(26.dp), icon = { ArchiveGlyph(44.dp) },
+        title = { Text(if (create) "Create ZIP" else "Extract ZIP / RAR", fontWeight = FontWeight.Bold) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
                 Text("Destination: ${destination.path}", style = MaterialTheme.typography.bodySmall)
@@ -1001,7 +1025,8 @@ private fun FolderPickerDialog(start: File, root: File, dismiss: () -> Unit, sel
             }
         }
     }
-    AlertDialog(onDismissRequest = dismiss, icon = { FolderGlyph(34.dp) }, title = { Text("Choose destination folder") },
+    AlertDialog(onDismissRequest = dismiss, shape = RoundedCornerShape(26.dp), icon = { FolderGlyph(38.dp) },
+        title = { Text("Choose destination folder", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(folder.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

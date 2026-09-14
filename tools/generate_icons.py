@@ -25,22 +25,25 @@ FONT_DIRS = [Path("/usr/share/fonts"), Path.home() / ".fonts", Path("/Library/Fo
 
 # (font file, text, cap height dp, baseline y dp, tracking dp)
 WORDS = [
-    ("LiberationSerif-BoldItalic.ttf", "Alal", 16.5, 51.0, 0.0),
-    ("LiberationSans-Bold.ttf", "ZIP", 7.5, 77.0, 3.5),
+    ("LiberationSerif-BoldItalic.ttf", "Alal", 18.0, 51.0, 0.0),
+    ("LiberationSans-Bold.ttf", "ZIP", 8.6, 79.5, 5.0),
 ]
 WHITE, AMBER, AMBER_DARK = "#FFFFFF", "#FFB300", "#FF8F00"
 
 
 def zipper():
-    """Interlocking zipper teeth between the words plus an amber slider: (x0, y0, x1, y1, colour)."""
+    """Zipper tape, interlocking teeth and an amber slider between the words: (x0, y0, x1, y1, colour)."""
     shapes = []
-    x = 33.0
-    while x + 2.4 <= 66.0:
-        shapes.append((x, 56.6, x + 2.4, 59.6, WHITE))          # upper tooth
-        shapes.append((x + 2.0, 58.8, x + 4.4, 61.8, WHITE))    # lower tooth, offset half a pitch
+    left, right = 29.0, 64.6
+    shapes.append((left, 54.0, right, 55.2, WHITE))             # upper tape
+    shapes.append((left, 63.0, right, 64.2, WHITE))             # lower tape
+    x = left + 0.4
+    while x + 2.0 <= right:
+        shapes.append((x, 55.2, x + 2.0, 58.6, WHITE))          # upper tooth
+        shapes.append((x + 2.0, 59.6, x + 4.0, 63.0, WHITE))    # lower tooth, offset half a pitch
         x += 4.0
-    shapes.append((66.4, 55.4, 74.4, 63.0, AMBER))              # slider body
-    shapes.append((69.4, 63.0, 71.4, 67.4, AMBER_DARK))         # pull tab
+    shapes.append((65.4, 54.0, 74.2, 64.2, AMBER))              # slider body
+    shapes.append((68.6, 64.2, 71.0, 69.2, AMBER_DARK))         # pull tab
     return shapes
 
 
