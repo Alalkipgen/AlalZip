@@ -2,6 +2,7 @@ package app.archivepocket
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
@@ -15,6 +16,7 @@ import app.archivepocket.data.Entry
 import app.archivepocket.data.FileRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -38,7 +40,12 @@ data class PocketState(
     val folders: List<File> = emptyList(), val entries: List<Entry> = emptyList(),
     val selected: Set<String> = emptySet(), val clipboard: List<Entry> = emptyList(), val cut: Boolean = false,
     val loading: Boolean = false, val busy: Boolean = false, val progress: Long = 0, val operation: String = "",
+    val operationTotal: Long = 0, val currentItem: String = "",
     val message: String? = null, val collision: String? = null,
+    /** Short success text shown as a snackbar; [noticeTarget] is the folder its action opens. */
+    val notice: String? = null, val noticeTarget: File? = null,
+    /** Most recently used extraction/ZIP destinations, newest first. */
+    val recent: List<String> = emptyList(),
     val previewing: Boolean = false, val archivePreview: ArchivePreview? = null, val archiveSource: Entry? = null,
     val fileToOpen: File? = null, val passwordRequest: PasswordRequest? = null,
     val free: Long = 0, val total: Long = 0
@@ -46,6 +53,7 @@ data class PocketState(
 
 class PocketViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = FileRepository(app)
+    private val preferences = app.getSharedPreferences("alal-zip", Context.MODE_PRIVATE)
     private val mutable = MutableStateFlow(PocketState())
     val state = mutable.asStateFlow()
     val root: File get() = repository.root
@@ -54,6 +62,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     private var listing: Job? = null
 
     init {
+        mutable.update { it.copy(recent = storedDestinations()) }
         viewModelScope.launch(Dispatchers.IO) {
             try { repository.cleanAbandoned() } catch (e: Exception) { message(safeError(e)) }
         }
@@ -69,6 +78,19 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         else -> "Storage/archive operation failed. Check permissions, available space, password and archive integrity."
     }
     fun message(text: String?) { mutable.update { it.copy(message = text) } }
+    /** Clears a snackbar notice once the UI has shown it. */
+    fun consumeNotice() { mutable.update { it.copy(notice = null, noticeTarget = null) } }
+
+    private fun storedDestinations(): List<String> =
+        preferences.getString(RECENT_KEY, "")?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+
+    /** Keeps the last few chosen destinations so the folder picker can offer them again. */
+    private fun rememberDestination(folder: File) {
+        val path = folder.path
+        val updated = (listOf(path) + storedDestinations().filter { it != path }).take(RECENT_LIMIT)
+        if (updated != storedDestinations()) preferences.edit().putString(RECENT_KEY, updated.joinToString("\n")).apply()
+        mutable.update { it.copy(recent = updated) }
+    }
 
     /** True when the app may browse shared storage directly. */
     fun hasAccess(): Boolean {
@@ -114,6 +136,14 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             current = current.parentFile
         }
         load(if (chain.isEmpty() || chain.first().path != root.path) listOf(root) else chain)
+    }
+    /** Snackbar "Open folder" action: waits for the finishing refresh, then navigates to [target]. */
+    fun reveal(target: File) {
+        viewModelScope.launch {
+            var attempts = 0
+            while ((state.value.loading || state.value.busy) && attempts < 30) { delay(100); attempts++ }
+            open(target)
+        }
     }
     /** Opens a ZIP/RAR as a read-only list without extracting its contents. */
     fun preview(entry: Entry) {
@@ -181,13 +211,22 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             }
         } finally { answer = null; mutable.update { it.copy(collision = null) } }
     }
-    private fun execute(label: String, password: CharArray? = null, askPassword: ((Boolean) -> PasswordRequest)? = null, action: (OperationControl) -> Unit) {
+    private fun execute(
+        label: String, password: CharArray? = null, noticeTarget: File? = null, expectedBytes: (() -> Long)? = null,
+        askPassword: ((Boolean) -> PasswordRequest)? = null, action: (OperationControl) -> Unit
+    ) {
         if (state.value.busy || state.value.loading) { password?.fill('\u0000'); return }
-        val token = OperationControl { bytes, current -> mutable.update { it.copy(progress = bytes, operation = "$label \u00b7 $current") } }
+        val token = OperationControl { bytes, current -> mutable.update { it.copy(progress = bytes, currentItem = current, operation = "$label \u00b7 $current") } }
         control = token
-        mutable.update { it.copy(busy = true, operation = label, progress = 0, message = null) }
+        mutable.update { it.copy(busy = true, operation = label, progress = 0, operationTotal = 0, currentItem = "", message = null, notice = null) }
         viewModelScope.launch(Dispatchers.IO) {
-            try { action(token); message("$label completed.") }
+            try {
+                // Known totals turn the progress bar into a real percentage; unknown ones stay indeterminate.
+                val total = expectedBytes?.let { runCatching(it).getOrDefault(0L) } ?: 0L
+                if (total > 0) mutable.update { it.copy(operationTotal = total) }
+                action(token)
+                mutable.update { it.copy(notice = "$label completed.", noticeTarget = noticeTarget) }
+            }
             catch (e: PasswordRequiredError) {
                 // The repository already discarded any partial output; ask the UI for a password and let the user retry.
                 if (askPassword != null) mutable.update { it.copy(passwordRequest = askPassword(e.wrongPassword)) } else message(safeError(e))
@@ -195,7 +234,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             catch (e: Exception) { message(safeError(e)) }
             finally {
                 password?.fill('\u0000'); control = null
-                mutable.update { it.copy(busy = false, selected = emptySet()) }
+                mutable.update { it.copy(busy = false, selected = emptySet(), operationTotal = 0, currentItem = "") }
                 refresh()
             }
         }
@@ -214,7 +253,9 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     fun zip(name: String, password: CharArray?, target: File? = null) {
         val entries = selected(); val destination = resolveDestination(target)
         if (destination == null || entries.isEmpty()) { password?.fill('\u0000'); return }
-        execute("Create ZIP", password) { repository.zip(entries, destination, name, password, it, ::confirm) }
+        execute("Create ZIP", password, noticeTarget = destination, expectedBytes = { entries.sumOf { entry -> if (entry.directory) 0L else entry.size } }) {
+            repository.zip(entries, destination, name, password, it, ::confirm)
+        }
     }
     /** Extracts the selected archive into a new sub-folder of [target], defaulting to the folder currently shown. */
     fun extract(name: String, password: CharArray?, target: File? = null) {
@@ -233,13 +274,18 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         val targetPath = runCatching { target.canonicalPath }.getOrElse { target.absolutePath }
         val inside = targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)
         if (!inside || !target.isDirectory) { message("Destination folder is not available; using the current folder."); return current }
+        rememberDestination(target)
         return target
     }
     private fun runExtract(source: Entry, destination: File, name: String, password: CharArray?) {
-        execute("Extract archive", password, { wrong -> PasswordRequest(source, destination, folderName = name, wrongPassword = wrong) }) {
-            repository.extract(source, destination, name, password, it, ::confirm)
-        }
+        execute(
+            "Extract archive", password, noticeTarget = File(destination, name), expectedBytes = { unpackedSize(source) },
+            askPassword = { wrong -> PasswordRequest(source, destination, folderName = name, wrongPassword = wrong) }
+        ) { repository.extract(source, destination, name, password, it, ::confirm) }
     }
+    /** Metadata-only estimate of an archive's unpacked size; 0 when the listing is unavailable. */
+    private fun unpackedSize(source: Entry): Long =
+        runCatching { repository.preview(source).items.sumOf { if (it.directory) 0L else it.size } }.getOrDefault(0L)
     /** RAR-style "Extract here": archive contents land directly in the folder currently shown. */
     fun extractHere(password: CharArray?, target: File? = null) {
         val source = selected().singleOrNull(); val destination = resolveDestination(target)
@@ -247,9 +293,15 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         runExtractHere(source, destination, password)
     }
     private fun runExtractHere(source: Entry, destination: File, password: CharArray?) {
-        execute("Extract archive", password, { wrong -> PasswordRequest(source, destination, wrongPassword = wrong) }) {
-            repository.extractHere(source, destination, password, it, ::confirm)
-        }
+        execute(
+            "Extract archive", password, noticeTarget = destination, expectedBytes = { unpackedSize(source) },
+            askPassword = { wrong -> PasswordRequest(source, destination, wrongPassword = wrong) }
+        ) { repository.extractHere(source, destination, password, it, ::confirm) }
     }
     override fun onCleared() { cancel(); super.onCleared() }
+
+    private companion object {
+        const val RECENT_KEY = "recent-destinations"
+        const val RECENT_LIMIT = 5
+    }
 }

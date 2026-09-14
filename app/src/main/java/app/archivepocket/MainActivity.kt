@@ -72,9 +72,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -370,8 +373,8 @@ private fun FileVisual(name: String, directory: Boolean, file: File? = null, mod
 }
 
 @Composable
-private fun GridGlyph(grid: Boolean, tint: Color) {
-    Canvas(Modifier.size(22.dp)) {
+private fun GridGlyph(grid: Boolean, tint: Color, description: String) {
+    Canvas(Modifier.size(22.dp).semantics { contentDescription = description }) {
         val w = this.size.width; val h = this.size.height
         if (grid) {
             for (x in 0..1) for (y in 0..1) drawRoundRect(tint, Offset(w * (0.06f + x * 0.5f), h * (0.06f + y * 0.5f)), Size(w * 0.38f, h * 0.38f), CornerRadius(w * 0.08f))
@@ -384,28 +387,74 @@ private fun GridGlyph(grid: Boolean, tint: Color) {
     }
 }
 
-/** Toolbar glyph: a zipper tile with a "+" (create) or up-arrow (extract) badge in the amber accent. */
+/** Zipper tile with a "+" (create) or up-arrow (extract) badge, shared by the toolbar and the selection bar. */
+@Composable
+private fun ArchiveActionGlyph(extract: Boolean, tile: Color, inner: Color, badge: Color, description: String? = null, size: Dp = 27.dp) {
+    Canvas(Modifier.size(size).semantics { if (description != null) contentDescription = description }) {
+        val w = this.size.width; val h = this.size.height
+        drawRoundRect(tile, Offset(0f, h * 0.06f), Size(w * 0.64f, h * 0.88f), CornerRadius(w * 0.18f))
+        for (i in 0..3) drawRect(inner, Offset(w * 0.26f, h * (0.2f + i * 0.16f)), Size(w * 0.14f, h * 0.08f))
+        val c = Offset(w * 0.74f, h * 0.73f); val r = w * 0.26f
+        drawCircle(badge, r, c)
+        val stroke = w * 0.1f
+        drawLine(inner, Offset(c.x, c.y + r * 0.52f), Offset(c.x, c.y - r * 0.52f), stroke, StrokeCap.Round)
+        if (extract) {
+            drawLine(inner, Offset(c.x - r * 0.46f, c.y - r * 0.06f), Offset(c.x, c.y - r * 0.54f), stroke, StrokeCap.Round)
+            drawLine(inner, Offset(c.x + r * 0.46f, c.y - r * 0.06f), Offset(c.x, c.y - r * 0.54f), stroke, StrokeCap.Round)
+        } else {
+            drawLine(inner, Offset(c.x - r * 0.52f, c.y), Offset(c.x + r * 0.52f, c.y), stroke, StrokeCap.Round)
+        }
+    }
+}
+
 @Composable
 private fun ArchiveIcon(extract: Boolean, enabled: Boolean, description: String, onClick: () -> Unit) {
-    val tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f)
-    val badge = Amber.copy(alpha = if (enabled) 1f else 0.4f)
     IconButton(onClick = onClick, enabled = enabled) {
-        Canvas(Modifier.size(27.dp).semantics { contentDescription = description }) {
-            val w = size.width; val h = size.height
-            drawRoundRect(tint, Offset(0f, h * 0.06f), Size(w * 0.64f, h * 0.88f), CornerRadius(w * 0.18f))
-            for (i in 0..3) drawRect(IndigoDeep, Offset(w * 0.26f, h * (0.2f + i * 0.16f)), Size(w * 0.14f, h * 0.08f))
-            val c = Offset(w * 0.74f, h * 0.73f); val r = w * 0.26f
-            drawCircle(badge, r, c)
-            val stroke = w * 0.1f
-            if (extract) {
-                drawLine(IndigoDeep, Offset(c.x, c.y + r * 0.52f), Offset(c.x, c.y - r * 0.52f), stroke, StrokeCap.Round)
-                drawLine(IndigoDeep, Offset(c.x - r * 0.46f, c.y - r * 0.06f), Offset(c.x, c.y - r * 0.54f), stroke, StrokeCap.Round)
-                drawLine(IndigoDeep, Offset(c.x + r * 0.46f, c.y - r * 0.06f), Offset(c.x, c.y - r * 0.54f), stroke, StrokeCap.Round)
-            } else {
-                drawLine(IndigoDeep, Offset(c.x, c.y + r * 0.52f), Offset(c.x, c.y - r * 0.52f), stroke, StrokeCap.Round)
-                drawLine(IndigoDeep, Offset(c.x - r * 0.52f, c.y), Offset(c.x + r * 0.52f, c.y), stroke, StrokeCap.Round)
+        ArchiveActionGlyph(
+            extract = extract, tile = Color.White.copy(alpha = if (enabled) 1f else 0.4f), inner = IndigoDeep,
+            badge = Amber.copy(alpha = if (enabled) 1f else 0.4f), description = description
+        )
+    }
+}
+
+/** Selection-mode actions placed within thumb reach, each with a visible label. */
+@Composable
+private fun SelectionBar(canExtract: Boolean, canShare: Boolean, enabled: Boolean,
+                         onExtract: () -> Unit, onZip: () -> Unit, onShare: () -> Unit, onDelete: () -> Unit) {
+    Surface(
+        Modifier.fillMaxWidth(), shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 6.dp, shadowElevation = 10.dp
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp)) {
+            SelectionAction("Extract", enabled && canExtract, Modifier.weight(1f), onExtract) { tint ->
+                ArchiveActionGlyph(extract = true, tile = tint, inner = MaterialTheme.colorScheme.surfaceVariant, badge = Amber, size = 26.dp)
+            }
+            SelectionAction("Add to ZIP", enabled, Modifier.weight(1f), onZip) { tint ->
+                ArchiveActionGlyph(extract = false, tile = tint, inner = MaterialTheme.colorScheme.surfaceVariant, badge = Amber, size = 26.dp)
+            }
+            SelectionAction("Share", enabled && canShare, Modifier.weight(1f), onShare) { tint ->
+                Icon(Icons.Filled.Share, null, Modifier.size(24.dp), tint = tint)
+            }
+            SelectionAction("Delete", enabled, Modifier.weight(1f), onDelete) { tint ->
+                Icon(Icons.Filled.Delete, null, Modifier.size(24.dp), tint = tint)
             }
         }
+    }
+}
+
+@Composable
+private fun SelectionAction(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit, glyph: @Composable (Color) -> Unit) {
+    val tint = if (label == "Delete" && enabled) MaterialTheme.colorScheme.error
+        else if (enabled) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    Column(
+        modifier.clip(RoundedCornerShape(18.dp)).clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = 56.dp).padding(vertical = 8.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+    ) {
+        glyph(tint)
+        Text(label, Modifier.padding(top = 5.dp), style = MaterialTheme.typography.labelMedium, color = tint,
+            maxLines = 2, textAlign = TextAlign.Center)
     }
 }
 
@@ -416,8 +465,9 @@ private val QUICK_FOLDERS = listOf(
     "Music" to Environment.DIRECTORY_MUSIC, "Documents" to Environment.DIRECTORY_DOCUMENTS
 )
 
-/** Tap = open/select, long-press = context menu. Ripple only; no forced haptics (they felt like stutter). */
-private fun Modifier.entryGestures(enabled: Boolean, selection: Set<String>, interaction: MutableInteractionSource, onTap: () -> Unit, onLongPress: () -> Unit): Modifier =
+/** Tap = open/select, long-press = context menu with a single light haptic confirmation. */
+private fun Modifier.entryGestures(enabled: Boolean, selection: Set<String>, interaction: MutableInteractionSource, haptics: HapticFeedback,
+                                   onTap: () -> Unit, onLongPress: () -> Unit): Modifier =
     this.indication(interaction, ripple()).pointerInput(enabled, selection) {
         if (!enabled) return@pointerInput
         detectTapGestures(
@@ -427,7 +477,7 @@ private fun Modifier.entryGestures(enabled: Boolean, selection: Set<String>, int
                 interaction.emit(if (tryAwaitRelease()) PressInteraction.Release(press) else PressInteraction.Cancel(press))
             },
             onTap = { onTap() },
-            onLongPress = { onLongPress() }
+            onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onLongPress() }
         )
     }
 
@@ -436,6 +486,8 @@ private fun Modifier.entryGestures(enabled: Boolean, selection: Set<String>, int
 fun PocketApp(model: PocketViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val snackbar = remember { SnackbarHostState() }
     var theme by rememberSaveable { mutableStateOf(0) }
     val dark = when (theme) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     val scheme = if (dark) darkColorScheme(
@@ -477,6 +529,17 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
     LaunchedEffect(state.fileToOpen) {
         state.fileToOpen?.let { file -> launchFile(context, file, model::message); model.consumeOpenedFile() }
+    }
+    // Successful operations report through a snackbar instead of interrupting with a dialog.
+    LaunchedEffect(state.notice) {
+        val notice = state.notice ?: return@LaunchedEffect
+        val target = state.noticeTarget
+        val result = snackbar.showSnackbar(
+            message = notice, actionLabel = if (target != null) "Open folder" else null,
+            withDismissAction = target == null, duration = SnackbarDuration.Short
+        )
+        if (result == SnackbarResult.ActionPerformed && target != null) model.reveal(target)
+        model.consumeNotice()
     }
 
     val selected = state.entries.filter { it.path in state.selected }
@@ -520,19 +583,16 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
                     .background(Brush.linearGradient(if (selecting) listOf(IndigoDeep, Indigo) else listOf(IndigoDeep, Indigo, IndigoLight)))
             ) {
-                Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
                         IconButton(onClick = model::clearSelection) { Icon(Icons.Filled.Close, "Clear selection", tint = Color.White) }
                         Column(Modifier.weight(1f)) {
-                            Text("${state.selected.size} selected", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${state.selected.size} selected", color = Color.White, style = MaterialTheme.typography.titleLarge)
                             Text(fileSize(selected.sumOf { it.size }) + if (selected.any { it.directory }) " + folders" else "", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(onClick = { shareFiles(context, selected.map { it.file }, model::message) }, enabled = enabled && selected.none { it.directory }) {
-                            Icon(Icons.Filled.Share, "Share", tint = Color.White.copy(alpha = if (enabled && selected.none { it.directory }) 1f else 0.4f))
+                        IconButton(onClick = model::selectAll, enabled = enabled && state.entries.isNotEmpty()) {
+                            Icon(Icons.Filled.Check, "Select all", tint = Color.White)
                         }
-                        ArchiveIcon(extract = false, enabled = enabled, description = "Create ZIP") { dialog = "zip" }
-                        ArchiveIcon(extract = true, enabled = enabled && selected.size == 1 && isArchive(selected[0].name), description = "Extract") { dialog = "extract" }
-                        IconButton(onClick = { dialog = "delete" }, enabled = enabled) { Icon(Icons.Filled.Delete, "Delete", tint = Color.White) }
                     } else {
                         Box {
                             IconButton(onClick = { quick = true }) { Icon(Icons.Filled.Menu, "Quick access", tint = Color.White) }
@@ -555,7 +615,9 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                         IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                             Icon(if (searching) Icons.Filled.Close else Icons.Filled.Search, if (searching) "Close search" else "Search", tint = Color.White)
                         }
-                        IconButton(onClick = { grid = !grid }) { GridGlyph(grid = !grid, tint = Color.White) }
+                        IconButton(onClick = { grid = !grid }) {
+                            GridGlyph(grid = !grid, tint = Color.White, description = if (grid) "List view" else "Grid view")
+                        }
                     }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More", tint = Color.White) }
@@ -601,11 +663,27 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                 if (state.busy) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
                     Column(Modifier.padding(14.dp)) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
-                        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val share = if (state.operationTotal > 0) (state.progress.toFloat() / state.operationTotal).coerceIn(0f, 1f) else null
+                        if (share != null) {
+                            LinearProgressIndicator(progress = { share }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                                trackColor = MaterialTheme.colorScheme.outlineVariant)
+                        } else {
+                            LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                                trackColor = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(state.operation, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                                Text("${fileSize(state.progress)} processed (includes verification)", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    if (share != null) "${(share * 100).toInt()}%  \u00b7  ${state.operation.substringBefore(" \u00b7 ")}" else state.operation,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    if (share != null) "${fileSize(state.progress)} of ${fileSize(state.operationTotal)} (includes verification)"
+                                    else "${fileSize(state.progress)} processed (includes verification)",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (state.currentItem.isNotBlank()) Text(state.currentItem, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                             }
                             TextButton(onClick = model::cancel) { Text("Cancel") }
                         }
@@ -668,7 +746,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                                         .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
                                         .border(if (checked) 1.5.dp else 1.dp,
                                             if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                                        .entryGestures(enabled, state.selected, interaction, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
+                                        .entryGestures(enabled, state.selected, interaction, haptics, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
                                         .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
@@ -694,7 +772,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                                         .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
                                         .border(if (checked) 1.5.dp else 1.dp,
                                             if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
-                                        .entryGestures(enabled, state.selected, interaction, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
+                                        .entryGestures(enabled, state.selected, interaction, haptics, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
                                         .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -707,7 +785,8 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                                             Text(dateText(entry.modified), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
-                                    Checkbox(checked = checked, onCheckedChange = { model.select(entry) }, enabled = enabled)
+                                    Checkbox(checked = checked, onCheckedChange = { model.select(entry) }, enabled = enabled,
+                                        modifier = Modifier.semantics { contentDescription = "Select ${entry.name}" })
                                 }
                                 EntryMenu(entry, state.selected, state.clipboard.isNotEmpty(), enabled, contextPath == entry.path, { contextPath = null }, model, context) { dialog = it }
                             }
@@ -715,6 +794,16 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     }
                 }
             }
+
+            if (selecting) SelectionBar(
+                canExtract = selected.size == 1 && isArchive(selected[0].name),
+                canShare = selected.isNotEmpty() && selected.none { it.directory },
+                enabled = enabled,
+                onExtract = { dialog = "extract" }, onZip = { dialog = "zip" },
+                onShare = { shareFiles(context, selected.map { it.file }, model::message) },
+                onDelete = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); dialog = "delete" }
+            )
+            SnackbarHost(snackbar, Modifier.padding(horizontal = 10.dp))
 
             // ---- Bottom breadcrumb path bar ----
             Row(
@@ -795,6 +884,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                 create = dialog == "zip",
                 current = state.folders.lastOrNull() ?: model.root,
                 root = model.root,
+                recent = remember(state.recent) { state.recent.map { File(it) } },
                 initialName = if (dialog == "zip") (selected.singleOrNull()?.name?.substringBeforeLast('.') ?: "Archive") + ".zip"
                     else selected.singleOrNull()?.name?.substringBeforeLast('.')?.ifBlank { null } ?: "Extracted",
                 dismiss = { dialog = null }
@@ -822,7 +912,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     }
                 },
                 confirmButton = { TextButton(onClick = { dialog = null }) { Text("Done") } })
-            "about" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, icon = { ArchiveGlyph(48.dp) }, title = { Text("Alal Zip 0.5.0") },
+            "about" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, icon = { ArchiveGlyph(48.dp) }, title = { Text("Alal Zip 0.6.0") },
                 text = { Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("Offline file manager and archiver: thumbnails, file-type icons, list/grid views, quick-access folders, secure Open with\u2026 and Share, plus folder-style ZIP/RAR browsing. Encrypted archives ask for their password only when needed, like RAR. Opening an archive item extracts only that member to private cache (512 MiB viewing limit), never the entire archive. ZIP/AES: Zip4j 2.11.6 (Apache-2.0). RAR extraction: Junrar 8.1.1 (UnRAR license). No RAR creation, split archives or links. 2 GiB extraction / 10,000 entries / 64 MiB RAR dictionary limits. Keep the app in the foreground during operations.")
                     Text("\nJunrar code may not be used to develop a RAR (WinRAR) compatible archiver. Copyright Alexander Roshal. Full third-party notices are bundled in app assets and source licenses.")
@@ -911,7 +1001,7 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
                         .background(Brush.linearGradient(listOf(IndigoDeep, Indigo, IndigoLight)))
-                        .statusBarsPadding().height(64.dp).padding(horizontal = 4.dp),
+                        .statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::goBack, enabled = !busy) { Icon(Icons.Filled.Close, "Close archive", tint = Color.White) }
@@ -994,7 +1084,8 @@ private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, subm
 }
 
 @Composable
-private fun ArchiveDialog(create: Boolean, current: File, root: File, initialName: String, dismiss: () -> Unit, submit: (String, CharArray?, File) -> Unit) {
+private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: List<File>, initialName: String,
+                          dismiss: () -> Unit, submit: (String, CharArray?, File) -> Unit) {
     var name by remember { mutableStateOf(initialName) }
     // Deliberately not rememberSaveable: passwords must never enter saved instance state.
     var password by remember { mutableStateOf("") }
@@ -1004,7 +1095,7 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, initialNam
     val valid = name.isNotBlank() && (!create || password == repeat)
     fun close() { password = ""; repeat = ""; dismiss() }
     if (picking) {
-        FolderPickerDialog(start = destination, root = root, dismiss = { picking = false }) { chosen ->
+        FolderPickerDialog(start = destination, root = root, recent = recent, dismiss = { picking = false }) { chosen ->
             destination = chosen; picking = false
         }
         return
@@ -1036,7 +1127,7 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, initialNam
 
 /** RAR-style destination chooser: browse folders under the storage root and pick one. */
 @Composable
-private fun FolderPickerDialog(start: File, root: File, dismiss: () -> Unit, select: (File) -> Unit) {
+private fun FolderPickerDialog(start: File, root: File, recent: List<File>, dismiss: () -> Unit, select: (File) -> Unit) {
     fun path(file: File): String = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
     var folder by remember { mutableStateOf(if (start.isDirectory && path(start).startsWith(path(root))) start else root) }
     var children by remember { mutableStateOf<List<File>>(emptyList()) }
@@ -1067,6 +1158,17 @@ private fun FolderPickerDialog(start: File, root: File, dismiss: () -> Unit, sel
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(folder.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                val shortcuts = remember(recent, folder.path) { recent.filter { it.isDirectory && path(it) != path(folder) }.take(5) }
+                if (shortcuts.isNotEmpty()) {
+                    Text("Recent destinations", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        shortcuts.forEach { shortcut ->
+                            AssistChip(onClick = { folder = shortcut }, shape = RoundedCornerShape(14.dp),
+                                leadingIcon = { FolderGlyph(18.dp) },
+                                label = { Text(shortcut.name.ifBlank { "Internal storage" }, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (canGoUp) TextButton(onClick = { parent?.let { folder = it } }) { Text("Up one level") }
                     TextButton(onClick = { creating = true }) { Text("New folder\u2026") }
