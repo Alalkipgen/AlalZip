@@ -34,6 +34,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -57,6 +58,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,6 +88,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -829,8 +832,11 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
         // ---- Dialogs ----
         state.message?.let { text ->
-            AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { model.message(null) }, icon = { Icon(Icons.Filled.Info, null) }, title = { Text("Alal Zip") },
-                text = { Text(text) }, confirmButton = { TextButton(onClick = { model.message(null) }) { Text("OK") } })
+            PocketDialog(
+                title = "Alal Zip", onDismiss = { model.message(null) }, confirmLabel = "OK",
+                onConfirm = { model.message(null) }, dismissLabel = null,
+                glyph = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary) }
+            ) { Text(text, style = MaterialTheme.typography.bodyMedium) }
         }
         state.archivePreview?.let { preview ->
             ArchiveBrowser(preview = preview, busy = state.previewing, dismiss = model::closePreview, openItem = model::openArchiveItem) {
@@ -842,43 +848,63 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
         state.passwordRequest?.let { request ->
             // RAR-style: extraction/opening was attempted without a password first; ask only when the archive needs one.
             var password by remember(request) { mutableStateOf("") }
-            AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { password = ""; model.cancelPassword() }, icon = { ArchiveGlyph(40.dp) },
-                title = { Text(if (request.wrongPassword) "Wrong password" else "Password required") },
-                text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(if (request.wrongPassword) "That password was rejected for \u201c${request.source.name}\u201d. Try again."
-                        else "\u201c${request.source.name}\u201d is encrypted. Enter the archive password to continue.", style = MaterialTheme.typography.bodyMedium)
-                    OutlinedTextField(value = password, onValueChange = { password = it }, singleLine = true, label = { Text("Archive password") }, shape = FieldShape,
-                        visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                } },
-                confirmButton = { TextButton(enabled = password.isNotEmpty(), onClick = { val chars = password.toCharArray(); password = ""; model.answerPassword(chars) }) { Text("Unlock") } },
-                dismissButton = { TextButton(onClick = { password = ""; model.cancelPassword() }) { Text("Cancel") } })
+            PocketDialog(
+                title = if (request.wrongPassword) "Wrong password" else "Password required",
+                subtitle = request.source.name,
+                onDismiss = { password = ""; model.cancelPassword() },
+                confirmLabel = "Unlock", confirmEnabled = password.isNotEmpty(),
+                onConfirm = { val chars = password.toCharArray(); password = ""; model.answerPassword(chars) },
+                onDismissClick = { password = ""; model.cancelPassword() },
+                glyph = { ArchiveGlyph(36.dp) }
+            ) {
+                Text(
+                    if (request.wrongPassword) "That password was rejected. Try again." else "This archive is encrypted.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                PasswordField(password, { password = it }, "Archive password", isError = request.wrongPassword)
+            }
         }
         state.collision?.let { name ->
-            AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { model.collisionAnswer(false) }, title = { Text("Name already exists") },
-                text = { Text("Replace \u201c$name\u201d? The existing item will be renamed to AP-backup-\u2026 and kept, not deleted. If the operation fails, the backup stays.") },
-                confirmButton = { TextButton(onClick = { model.collisionAnswer(true) }) { Text("Keep backup & replace") } },
-                dismissButton = { TextButton(onClick = { model.collisionAnswer(false) }) { Text("Cancel operation") } })
+            PocketDialog(
+                title = "Name already exists", subtitle = name,
+                onDismiss = { model.collisionAnswer(false) },
+                confirmLabel = "Replace", onConfirm = { model.collisionAnswer(true) },
+                dismissLabel = "Cancel operation", onDismissClick = { model.collisionAnswer(false) },
+                glyph = { Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error) }
+            ) {
+                ExpandableNote(
+                    summary = "The existing item is kept as a backup, not deleted.",
+                    details = "It is renamed to AP-backup-\u2026 before the new data is written. If the operation fails, the backup stays in place."
+                )
+            }
         }
         when (dialog) {
             "mkdir", "rename" -> NameDialog(if (dialog == "mkdir") "New folder" else "Rename", if (dialog == "rename") selected.firstOrNull()?.name ?: "" else "",
                 dismiss = { dialog = null }) { name -> if (dialog == "mkdir") model.mkdir(name) else model.rename(name); dialog = null }
-            "delete" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, icon = { Icon(Icons.Filled.Delete, null) }, title = { Text("Delete ${selected.size} item(s)?") },
-                text = { Text("This permanently deletes the selected files and all contents of selected folders. There is no undo.") },
-                confirmButton = { TextButton(onClick = { dialog = null; model.delete() }) { Text("Delete permanently", color = MaterialTheme.colorScheme.error) } },
-                dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } })
+            "delete" -> PocketDialog(
+                title = "Delete ${selected.size} item(s)?",
+                subtitle = selected.singleOrNull()?.name,
+                onDismiss = { dialog = null },
+                confirmLabel = "Delete", destructive = true, onConfirm = { dialog = null; model.delete() },
+                glyph = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) }
+            ) {
+                Text("Selected files and everything inside selected folders are removed. There is no undo.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             "details" -> selected.singleOrNull()?.let { entry ->
-                AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null },
-                    icon = { FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 56.dp) },
-                    title = { Text(entry.name, maxLines = 3, overflow = TextOverflow.Ellipsis) },
-                    text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        DetailRow("Type", if (entry.directory) "Folder" else "${extension(entry.name).uppercase(Locale.ROOT).ifEmpty { "File" }}  (${mimeType(entry.name)})")
-                        DetailRow("Size", if (entry.directory) "\u2014" else fileSize(entry.size) + " (${entry.size} bytes)")
-                        DetailRow("Modified", dateText(entry.modified).ifEmpty { "Unknown" })
-                        DetailRow("Access", listOfNotNull(if (entry.file.canRead()) "read" else null, if (entry.file.canWrite()) "write" else null).joinToString(", ").ifEmpty { "none" })
-                        DetailRow("Path", entry.path)
-                    } },
-                    confirmButton = { TextButton(onClick = { dialog = null }) { Text("Close") } },
-                    dismissButton = { TextButton(onClick = { copyText(context, "Path", entry.path, model::message) }) { Text("Copy path") } })
+                PocketDialog(
+                    title = entry.name,
+                    subtitle = if (entry.directory) "Folder" else fileSize(entry.size),
+                    onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null },
+                    dismissLabel = "Copy path", onDismissClick = { copyText(context, "Path", entry.path, model::message) },
+                    glyph = { FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 40.dp) }
+                ) {
+                    DetailRow("Type", if (entry.directory) "Folder" else "${extension(entry.name).uppercase(Locale.ROOT).ifEmpty { "File" }}  (${mimeType(entry.name)})")
+                    DetailRow("Size", if (entry.directory) "\u2014" else fileSize(entry.size) + " (${entry.size} bytes)")
+                    DetailRow("Modified", dateText(entry.modified).ifEmpty { "Unknown" })
+                    DetailRow("Access", listOfNotNull(if (entry.file.canRead()) "read" else null, if (entry.file.canWrite()) "write" else null).joinToString(", ").ifEmpty { "none" })
+                    DetailRow("Path", entry.path)
+                }
             }
             "zip", "extract" -> ArchiveDialog(
                 create = dialog == "zip",
@@ -892,31 +918,36 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                 if (dialog == "zip") model.zip(name, password, destination) else model.extract(name, password, destination)
                 dialog = null
             }
-            "sort" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, title = { Text("Sort by") },
-                text = {
-                    Column {
-                        SORT_NAMES.forEachIndexed { index, label ->
-                            Row(Modifier.fillMaxWidth().clickable { sort = index }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = sort == index, onClick = { sort = index })
-                                Text(label, style = MaterialTheme.typography.bodyLarge)
-                            }
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        listOf(false to "Ascending (A\u2192Z, small\u2192large, old\u2192new)", true to "Descending (Z\u2192A, large\u2192small, new\u2192old)").forEach { (value, label) ->
-                            Row(Modifier.fillMaxWidth().clickable { descending = value }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = descending == value, onClick = { descending = value })
-                                Text(label, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                        Text("Folders are always listed before files.", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
-                    }
-                },
-                confirmButton = { TextButton(onClick = { dialog = null }) { Text("Done") } })
-            "about" -> AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { dialog = null }, icon = { ArchiveGlyph(48.dp) }, title = { Text("Alal Zip 0.6.0") },
-                text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Offline file manager and archiver: thumbnails, file-type icons, list/grid views, quick-access folders, secure Open with\u2026 and Share, plus folder-style ZIP/RAR browsing. Encrypted archives ask for their password only when needed, like RAR. Opening an archive item extracts only that member to private cache (512 MiB viewing limit), never the entire archive. ZIP/AES: Zip4j 2.11.6 (Apache-2.0). RAR extraction: Junrar 8.1.1 (UnRAR license). No RAR creation, split archives or links. 2 GiB extraction / 10,000 entries / 64 MiB RAR dictionary limits. Keep the app in the foreground during operations.")
-                    Text("\nJunrar code may not be used to develop a RAR (WinRAR) compatible archiver. Copyright Alexander Roshal. Full third-party notices are bundled in app assets and source licenses.")
-                } }, confirmButton = { TextButton(onClick = { dialog = null }) { Text("Close") } })
+            "sort" -> PocketDialog(
+                title = "Sort by", onDismiss = { dialog = null }, confirmLabel = "Done",
+                onConfirm = { dialog = null }, dismissLabel = null
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SORT_NAMES.forEachIndexed { index, label -> ChoiceRow(label, sort == index) { sort = index } }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    ChoiceRow("Ascending (A\u2192Z, small\u2192large, old\u2192new)", !descending) { descending = false }
+                    ChoiceRow("Descending (Z\u2192A, large\u2192small, new\u2192old)", descending) { descending = true }
+                }
+                Text("Folders are always listed before files.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            "about" -> PocketDialog(
+                title = "Alal Zip", subtitle = "Version 0.6.1  \u00b7  offline, no internet permission",
+                onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null }, dismissLabel = null,
+                glyph = { ArchiveGlyph(40.dp) }
+            ) {
+                Text("File manager and archiver with thumbnails, list and grid views, quick-access folders, folder-style ZIP/RAR browsing and secure Open with\u2026 and Share.",
+                    style = MaterialTheme.typography.bodyMedium)
+                ExpandableNote(
+                    summary = "Encrypted archives ask for their password only when it is needed.",
+                    details = "Opening an archive item extracts only that member to private cache (512 MiB viewing limit), never the whole archive. " +
+                        "ZIP/AES: Zip4j 2.11.6 (Apache-2.0). RAR extraction: Junrar 8.1.1 (UnRAR license); no RAR creation, split archives or links. " +
+                        "Limits: 2 GiB extraction, 10,000 entries, 64 MiB RAR dictionary. Keep the app in the foreground during operations. " +
+                        "Junrar code may not be used to develop a RAR (WinRAR) compatible archiver. Copyright Alexander Roshal. " +
+                        "Full third-party notices are bundled in app assets and source licenses."
+                )
+            }
         }
     }
 }
@@ -1058,14 +1089,144 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
     }
     passwordPath?.let { path ->
         var password by remember(path) { mutableStateOf("") }
-        AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = { password = ""; passwordPath = null }, title = { Text("Open encrypted file") },
-            text = { OutlinedTextField(password, { password = it }, singleLine = true, label = { Text("Archive password") }, shape = FieldShape,
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)) },
-            confirmButton = { TextButton(onClick = {
-                val chars = password.takeIf { it.isNotEmpty() }?.toCharArray(); password = ""; passwordPath = null; openItem(path, chars)
-            }) { Text("Open") } },
-            dismissButton = { TextButton(onClick = { password = ""; passwordPath = null }) { Text("Cancel") } })
+        PocketDialog(
+            title = "Open encrypted file", subtitle = path.substringAfterLast('/'),
+            onDismiss = { password = ""; passwordPath = null },
+            confirmLabel = "Open", confirmEnabled = password.isNotEmpty(),
+            onConfirm = { val chars = password.takeIf { it.isNotEmpty() }?.toCharArray(); password = ""; passwordPath = null; openItem(path, chars) },
+            onDismissClick = { password = ""; passwordPath = null },
+            glyph = { ArchiveGlyph(36.dp) }
+        ) { PasswordField(password, { password = it }, "Archive password") }
     }
+}
+
+// ---------------------------------------------------------------- prompt boxes
+/**
+ * One shell for every prompt box: glyph and title on a single left-aligned line, an optional
+ * subtitle for the object being acted on, a 12 dp content rhythm and a filled primary action.
+ */
+@Composable
+private fun PocketDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    confirmEnabled: Boolean = true,
+    destructive: Boolean = false,
+    dismissLabel: String? = "Cancel",
+    onDismissClick: (() -> Unit)? = null,
+    subtitle: String? = null,
+    glyph: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val secondaryButton: (@Composable () -> Unit)? = dismissLabel?.let { label ->
+        { TextButton(onClick = onDismissClick ?: onDismiss) { Text(label, maxLines = 1) } }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = DialogShape,
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 2.dp,
+        title = {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (glyph != null) {
+                    glyph()
+                    Spacer(Modifier.width(12.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm, enabled = confirmEnabled, shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
+                colors = if (destructive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
+                    else ButtonDefaults.buttonColors()
+            ) { Text(confirmLabel, maxLines = 1) }
+        },
+        dismissButton = secondaryButton
+    )
+}
+
+/** Tappable destination summary: folder glyph, readable path, Change affordance. */
+@Composable
+private fun DestinationRow(folder: File, root: File, onChange: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(CardShape).background(MaterialTheme.colorScheme.secondaryContainer)
+            .clickable(onClick = onChange).padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FolderGlyph(26.dp)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text("Destination", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Text(shortPath(folder, root), style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Icon(Icons.Filled.KeyboardArrowRight, "Change destination folder", tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** "Internal storage / Download" reads better in a prompt box than /storage/emulated/0/Download. */
+private fun shortPath(folder: File, root: File): String {
+    val rootPath = runCatching { root.canonicalPath }.getOrElse { root.absolutePath }
+    val path = runCatching { folder.canonicalPath }.getOrElse { folder.absolutePath }
+    if (path == rootPath) return "Internal storage"
+    if (!path.startsWith(rootPath + File.separator)) return path
+    return "Internal storage / " + path.removePrefix(rootPath + File.separator).replace("/", " / ")
+}
+
+/** Keeps prompt boxes short: one plain line, with the small print behind a Details toggle. */
+@Composable
+private fun ExpandableNote(summary: String, details: String) {
+    var open by remember { mutableStateOf(false) }
+    Column {
+        Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { open = !open }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+            Text(if (open) "Hide details" else "Details", style = MaterialTheme.typography.labelLarge)
+        }
+        if (open) Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Full-width selectable row used by the Sort prompt box. */
+@Composable
+private fun ChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(FieldShape)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .clickable(onClick = onSelect).padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Text(label, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** Masked field with a Show/Hide toggle; the value is never kept in saved instance state. */
+@Composable
+private fun PasswordField(value: String, onValueChange: (String) -> Unit, label: String, isError: Boolean = false, supporting: String? = null) {
+    var visible by remember { mutableStateOf(false) }
+    val helper: (@Composable () -> Unit)? = supporting?.let { text -> { Text(text) } }
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange, singleLine = true, shape = FieldShape, isError = isError,
+        modifier = Modifier.fillMaxWidth(), label = { Text(label) },
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        supportingText = helper,
+        trailingIcon = {
+            TextButton(onClick = { visible = !visible }) {
+                Text(if (visible) "Hide" else "Show", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    )
 }
 
 // ---------------------------------------------------------------- small dialogs
@@ -1077,10 +1238,13 @@ private fun MenuItem(text: String, enabled: Boolean, action: () -> Unit) {
 @Composable
 private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, submit: (String) -> Unit) {
     var name by remember { mutableStateOf(initial) }
-    AlertDialog(shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, onDismissRequest = dismiss, title = { Text(title) },
-        text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, shape = FieldShape) },
-        confirmButton = { TextButton(onClick = { submit(name) }, enabled = name.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
+    PocketDialog(
+        title = title, onDismiss = dismiss, confirmLabel = "Save", confirmEnabled = name.isNotBlank(),
+        onConfirm = { submit(name) }, glyph = { FolderGlyph(30.dp) }
+    ) {
+        OutlinedTextField(value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Name") }, singleLine = true, shape = FieldShape)
+    }
 }
 
 @Composable
@@ -1092,6 +1256,7 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
     var repeat by remember { mutableStateOf("") }
     var destination by remember(current.path) { mutableStateOf(current) }
     var picking by remember { mutableStateOf(false) }
+    val mismatch = create && repeat.isNotEmpty() && password != repeat
     val valid = name.isNotBlank() && (!create || password == repeat)
     fun close() { password = ""; repeat = ""; dismiss() }
     if (picking) {
@@ -1100,29 +1265,38 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
         }
         return
     }
-    AlertDialog(onDismissRequest = { close() }, shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, icon = { ArchiveGlyph(44.dp) },
-        title = { Text(if (create) "Create ZIP" else "Extract ZIP / RAR", fontWeight = FontWeight.Bold) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column {
-                Text("Destination: ${destination.path}", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { picking = true }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("Change folder\u2026") }
-            }
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(if (create) "ZIP file name" else "Output folder name") }, singleLine = true, shape = FieldShape)
-            if (create) {
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password (optional)") }, singleLine = true, shape = FieldShape,
-                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-                OutlinedTextField(value = repeat, onValueChange = { repeat = it }, label = { Text("Repeat password") }, singleLine = true, shape = FieldShape,
-                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
-            }
-            Text(if (create) "The ZIP is created in the destination folder. A non-empty password enables AES-256. File names are not hidden. Forgotten passwords cannot be recovered."
-                else "Files are extracted into a new sub-folder of the destination folder you choose. Encrypted archives ask for their password only when it is needed. Up to 2 GiB output. Split volumes and RAR links are unsupported.", style = MaterialTheme.typography.bodySmall)
-        } },
-        confirmButton = { TextButton(enabled = valid, onClick = {
+    PocketDialog(
+        title = if (create) "Create ZIP" else "Extract ZIP / RAR",
+        subtitle = if (create) "New archive" else "Unpack into a new sub-folder",
+        onDismiss = { close() },
+        confirmLabel = if (create) "Create" else "Extract",
+        confirmEnabled = valid,
+        onConfirm = {
             val chars = if (create) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
             password = ""; repeat = ""
             submit(if (create && !name.endsWith(".zip", true)) "$name.zip" else name, chars, destination)
-        }) { Text(if (create) "Create" else "Extract") } },
-        dismissButton = { TextButton(onClick = { close() }) { Text("Cancel") } })
+        },
+        onDismissClick = { close() },
+        glyph = { ArchiveGlyph(36.dp) }
+    ) {
+        DestinationRow(destination, root) { picking = true }
+        OutlinedTextField(
+            value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = FieldShape,
+            label = { Text(if (create) "ZIP file name" else "Output folder name") },
+            leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
+        )
+        if (create) {
+            PasswordField(password, { password = it }, "Password (optional)")
+            PasswordField(repeat, { repeat = it }, "Repeat password", isError = mismatch,
+                supporting = if (mismatch) "Passwords do not match." else null)
+        }
+        ExpandableNote(
+            summary = if (create) "The ZIP is created in the destination folder."
+                else "Files land in a new sub-folder of the destination folder.",
+            details = if (create) "A non-empty password enables AES-256. File names are not hidden, and forgotten passwords cannot be recovered."
+                else "Encrypted archives ask for their password only when it is needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
+        )
+    }
 }
 
 /** RAR-style destination chooser: browse folders under the storage root and pick one. */
@@ -1153,43 +1327,52 @@ private fun FolderPickerDialog(start: File, root: File, recent: List<File>, dism
             }
         }
     }
-    AlertDialog(onDismissRequest = dismiss, shape = DialogShape, containerColor = MaterialTheme.colorScheme.surfaceVariant, icon = { FolderGlyph(38.dp) },
-        title = { Text("Choose destination folder", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(folder.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                val shortcuts = remember(recent, folder.path) { recent.filter { it.isDirectory && path(it) != path(folder) }.take(5) }
-                if (shortcuts.isNotEmpty()) {
-                    Text("Recent destinations", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        shortcuts.forEach { shortcut ->
-                            AssistChip(onClick = { folder = shortcut }, shape = RoundedCornerShape(14.dp),
-                                leadingIcon = { FolderGlyph(18.dp) },
-                                label = { Text(shortcut.name.ifBlank { "Internal storage" }, maxLines = 1, overflow = TextOverflow.Ellipsis) })
-                        }
-                    }
+    PocketDialog(
+        title = "Choose destination", subtitle = shortPath(folder, root),
+        onDismiss = dismiss, confirmLabel = "Use this folder", onConfirm = { select(folder) },
+        glyph = { FolderGlyph(32.dp) }
+    ) {
+        val shortcuts = remember(recent, folder.path) { recent.filter { it.isDirectory && path(it) != path(folder) }.take(5) }
+        if (shortcuts.isNotEmpty()) Column {
+            Text("Recent destinations", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                shortcuts.forEach { shortcut ->
+                    AssistChip(
+                        onClick = { folder = shortcut }, shape = RoundedCornerShape(16.dp),
+                        leadingIcon = { FolderGlyph(18.dp) },
+                        label = { Text(shortcut.name.ifBlank { "Internal storage" }, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (canGoUp) TextButton(onClick = { parent?.let { folder = it } }) { Text("Up one level") }
-                    TextButton(onClick = { creating = true }) { Text("New folder\u2026") }
-                }
-                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                    when {
-                        failed -> Text("Cannot read this folder. Check that storage access (All files access) is allowed.", style = MaterialTheme.typography.bodySmall)
-                        children.isEmpty() -> Text("No sub-folders here.", style = MaterialTheme.typography.bodySmall)
-                        else -> children.forEach { child ->
-                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { folder = child }.padding(vertical = 8.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                FolderGlyph(22.dp)
-                                Spacer(Modifier.width(10.dp))
-                                Text(child.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (canGoUp) TextButton(onClick = { parent?.let { folder = it } }) { Text("Up one level") }
+            TextButton(onClick = { creating = true }) { Text("New folder\u2026") }
+        }
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 300.dp).clip(CardShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f))
+                .verticalScroll(rememberScrollState()).padding(6.dp)
+        ) {
+            when {
+                failed -> Text("Cannot read this folder. Check that storage access (All files access) is allowed.",
+                    Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall)
+                children.isEmpty() -> Text("No sub-folders here.", Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> children.forEach { child ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(FieldShape).clickable { folder = child }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FolderGlyph(24.dp)
+                        Text(child.name, Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Icon(Icons.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { select(folder) }) { Text("Use this folder") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
+        }
+    }
 }
 
