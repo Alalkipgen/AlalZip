@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Alal Zip launcher icon: a text-free "unzipping" mark on the violet brand gradient.
+"""Alal Zip launcher icon: a text-free zipper mark on the violet brand gradient.
 
-The foreground is a white rounded archive tile whose zipper is open at the top: the
-opening shows the gradient through a violet wedge with white teeth along both tapes,
-the closed teeth continue below, and an amber slider with a pull tab sits at the
-junction. Everything is geometry only, so the adaptive vector and the legacy PNGs
-are drawn from the same numbers and no font files are needed.
+The foreground is a single vertical zipper: white teeth run edge to edge, split
+open above the slider, and an amber slider with a pull tab sits in the middle.
+The slider and tab keep the punched-out holes of a real zipper pull, drawn with
+even-odd subpaths so the gradient shows through. Everything is geometry only, so
+the adaptive vector and the legacy PNGs come from the same numbers.
 
 Generates app/src/main/res/drawable/ic_launcher_{foreground,background}.xml,
 the legacy mipmap PNGs and three mask previews in docs/.
@@ -22,16 +22,14 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "app/src/main/res"
 
-WHITE, AMBER, AMBER_DARK, VIOLET = "#FFFFFF", "#FFB300", "#FF8F00", "#4B3BD1"
+WHITE, AMBER, AMBER_DARK = "#FFFFFF", "#FFB300", "#FF8F00"
 # Adaptive background: the violet brand gradient also used by the app's top bar.
 BG_STOPS = (("0", "#2B1B6E"), ("0.55", "#4B3BD1"), ("1", "#7C5CF0"))
 
 SAFE_CENTER, SAFE_RADIUS = 54.0, 33.0   # Android adaptive-icon safe circle
-TILE = (31.0, 31.0, 77.0, 77.0)         # white archive tile
-TILE_RADIUS = 13.0
-VERTEX = (54.0, 55.0)                   # where the zipper closes: the slider sits here
-OPEN_LEFT, OPEN_RIGHT = (44.5, 31.0), (63.5, 31.0)
-SEAM_HALF = 2.2                         # half width of the closed zipper seam
+CX = 54.0                               # the zipper runs down the centre
+TAPE_LEFT = ((46.0, 38.0), (16.0, -4.0))    # open tape, slider -> top-left edge
+TAPE_RIGHT = ((62.0, 38.0), (92.0, -4.0))   # open tape, slider -> top-right edge
 
 
 def number(value):
@@ -39,82 +37,70 @@ def number(value):
     return "0" if text in ("", "-0") else text
 
 
-def rectangle(x0, y0, x1, y1):
-    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-
-
-def edge_teeth(start, end, count, width, depth, inward):
-    """Small quads marching along an open zipper tape, leaning with the tape."""
+def tape_teeth(start, end, count, thickness, length):
+    """Bars sitting across an open zipper tape, leaning with the tape."""
     (ax, ay), (bx, by) = start, end
-    length = math.hypot(bx - ax, by - ay)
-    ux, uy = (bx - ax) / length, (by - ay) / length
-    nx, ny = -uy * inward, ux * inward
+    span = math.hypot(bx - ax, by - ay)
+    ux, uy = (bx - ax) / span, (by - ay) / span
+    nx, ny = -uy, ux
     teeth = []
     for index in range(count):
-        centre = (index + 0.6) * length / (count + 0.2)
+        centre = (index + 0.5) * span / count
         px, py = ax + ux * centre, ay + uy * centre
-        hw = width / 2
+        hu, hn = thickness / 2, length / 2
         teeth.append([
-            (px - ux * hw, py - uy * hw),
-            (px + ux * hw, py + uy * hw),
-            (px + ux * hw + nx * depth, py + uy * hw + ny * depth),
-            (px - ux * hw + nx * depth, py - uy * hw + ny * depth),
+            (px - ux * hu - nx * hn, py - uy * hu - ny * hn),
+            (px + ux * hu - nx * hn, py + uy * hu - ny * hn),
+            (px + ux * hu + nx * hn, py + uy * hu + ny * hn),
+            (px - ux * hu + nx * hn, py - uy * hu + ny * hn),
         ])
     return teeth
 
 
-def closed_seam():
-    """The closed zipper below the slider: a seam with teeth alternating sideways."""
-    cx = VERTEX[0]
-    top, bottom = VERTEX[1] + 3.0, TILE[3] - 5.0
-    shapes = [rectangle(cx - SEAM_HALF, top, cx + SEAM_HALF, bottom)]
-    y = top + 1.6
-    side = -1
-    while y + 2.2 <= bottom:
-        if side < 0:
-            shapes.append(rectangle(cx - SEAM_HALF - 3.2, y, cx - SEAM_HALF, y + 2.2))
-        else:
-            shapes.append(rectangle(cx + SEAM_HALF, y, cx + SEAM_HALF + 3.2, y + 2.2))
-        side = -side
-        y += 3.0
-    return shapes
+def closed_teeth():
+    """Interlocking teeth below the slider, alternating across the seam."""
+    teeth, y, left = [], 84.0, True
+    while y < 112.0:
+        x0 = CX - 10.0 if left else CX - 0.6
+        teeth.append(("round", (x0, y, x0 + 10.6, y + 3.4, 1.4)))
+        left = not left
+        y += 4.7
+    return teeth
 
 
 def build():
-    """Returns (shapes, corners): shapes are (kind, geometry, colour) draw commands."""
-    x0, y0, x1, y1 = TILE
-    shapes = [("tile", (x0, y0, x1, y1, TILE_RADIUS), WHITE)]
-    corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+    """Returns (shapes, core): shapes are draw commands, core must stay in the safe circle."""
+    shapes = []
+    for tooth in tape_teeth(*TAPE_LEFT, 6, 3.4, 12.0):
+        shapes.append(("polygon", tooth, WHITE))
+    for tooth in tape_teeth(*TAPE_RIGHT, 6, 3.4, 12.0):
+        shapes.append(("polygon", tooth, WHITE))
+    for kind, geometry in closed_teeth():
+        shapes.append((kind, geometry, WHITE))
 
-    shapes.append(("polygon", [VERTEX, OPEN_LEFT, OPEN_RIGHT], VIOLET))
-    # Violet teeth bite into the white tile along both open tapes.
-    for tooth in edge_teeth(OPEN_LEFT, VERTEX, 4, 2.4, 3.0, 1):
-        shapes.append(("polygon", tooth, VIOLET))
-    for tooth in edge_teeth(OPEN_RIGHT, VERTEX, 4, 2.4, 3.0, -1):
-        shapes.append(("polygon", tooth, VIOLET))
-    for tooth in closed_seam():
-        shapes.append(("polygon", tooth, VIOLET))
-    shapes.append(("round", (VERTEX[0] - 6.0, VERTEX[1] - 4.4, VERTEX[0] + 6.0, VERTEX[1] + 4.4, 2.8), AMBER))
-    shapes.append(("round", (VERTEX[0] - 2.0, VERTEX[1] + 4.0, VERTEX[0] + 2.0, VERTEX[1] + 14.0, 1.8), AMBER_DARK))
+    # Slider: wide shoulders, body with a punched slot, and a ring-shaped pull tab.
+    shoulders = ("round", (38.0, 36.0, 70.0, 56.0, 9.5))
+    body = [("round", (43.0, 44.0, 65.0, 84.0, 7.0)), ("round", (48.5, 66.0, 59.5, 77.0, 3.4))]
+    tab = [("round", (46.5, 22.0, 61.5, 50.0, 7.2)), ("round", (50.3, 26.0, 57.7, 43.0, 3.6))]
+    # Order matters: the tab is painted last so its punched hole is never covered.
+    shapes.append((shoulders[0], shoulders[1], AMBER))
+    shapes.append(("compound", body, AMBER))
+    shapes.append(("compound", tab, AMBER_DARK))
 
-    for kind, geometry, _ in shapes[1:]:
-        points = geometry if kind == "polygon" else [
-            (geometry[0], geometry[1]), (geometry[2], geometry[1]), (geometry[0], geometry[3]), (geometry[2], geometry[3])
-        ]
-        corners += list(points)
-    # Every drawn corner must stay inside the centered 66 dp safe circle.
-    for x, y in corners:
+    core = []
+    for kind, geometry in [shoulders, body[0], tab[0]]:
+        x0, y0, x1, y1, _ = geometry
+        core += [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+    # The slider is the mark's anchor, so it must stay inside the 66 dp safe circle.
+    for x, y in core:
         assert (x - SAFE_CENTER) ** 2 + (y - SAFE_CENTER) ** 2 < SAFE_RADIUS ** 2, (x, y)
-    return shapes, corners
+    return shapes, core
 
 
 CORNERS = build()[1]
 
 
-def path_data(kind, geometry):
-    if kind == "polygon":
-        head = f"M{number(geometry[0][0])},{number(geometry[0][1])}"
-        return head + "".join(f"L{number(x)},{number(y)}" for x, y in geometry[1:]) + "Z"
+def round_data(geometry):
     x0, y0, x1, y1, r = geometry
     return (
         f"M{number(x0 + r)},{number(y0)}H{number(x1 - r)}"
@@ -123,6 +109,19 @@ def path_data(kind, geometry):
         f"A{number(r)},{number(r)} 0 0 1 {number(x0)},{number(y1 - r)}V{number(y0 + r)}"
         f"A{number(r)},{number(r)} 0 0 1 {number(x0 + r)},{number(y0)}Z"
     )
+
+
+def polygon_data(points):
+    head = f"M{number(points[0][0])},{number(points[0][1])}"
+    return head + "".join(f"L{number(x)},{number(y)}" for x, y in points[1:]) + "Z"
+
+
+def path_data(kind, geometry):
+    if kind == "polygon":
+        return polygon_data(geometry)
+    if kind == "compound":
+        return "".join(polygon_data(g) if k == "polygon" else round_data(g) for k, g in geometry)
+    return round_data(geometry)
 
 
 def rgb(colour):
@@ -134,7 +133,9 @@ def main():
     drawable = RES / "drawable"
     drawable.mkdir(parents=True, exist_ok=True)
     body = "".join(
-        f'    <path android:fillColor="{colour}" android:pathData="{path_data(kind, geometry)}" />\n'
+        f'    <path android:fillColor="{colour}"'
+        + (' android:fillType="evenOdd"' if kind == "compound" else "")
+        + f' android:pathData="{path_data(kind, geometry)}" />\n'
         for kind, geometry, colour in shapes
     )
     (drawable / "ic_launcher_foreground.xml").write_text(
@@ -171,13 +172,25 @@ def main():
             ratio = min(max((t - stops[lower][0]) / span, 0.0), 1.0)
             colour = tuple(int(round(stops[lower][1][c] + (stops[upper][1][c] - stops[lower][1][c]) * ratio)) for c in range(3))
             draw.line((0, diagonal, diagonal, 0), fill=colour + (255,))
-        for kind, geometry, colour in shapes:
-            fill = rgb(colour) + (255,)
+
+        def paint(target_draw, kind, geometry, fill):
             if kind == "polygon":
-                draw.polygon([(x * k, y * k) for x, y in geometry], fill=fill)
+                target_draw.polygon([(x * k, y * k) for x, y in geometry], fill=fill)
             else:
                 x0, y0, x1, y1, r = geometry
-                draw.rounded_rectangle((x0 * k, y0 * k, x1 * k, y1 * k), radius=r * k, fill=fill)
+                target_draw.rounded_rectangle((x0 * k, y0 * k, x1 * k, y1 * k), radius=r * k, fill=fill)
+
+        for kind, geometry, colour in shapes:
+            fill = rgb(colour) + (255,)
+            if kind != "compound":
+                paint(draw, kind, geometry, fill)
+                continue
+            # even-odd: paint the outline, then punch the holes back to the background
+            layer = Image.new("L", (big, big), 0)
+            layer_draw = ImageDraw.Draw(layer)
+            for index, (sub_kind, sub_geometry) in enumerate(geometry):
+                paint(layer_draw, sub_kind, sub_geometry, 255 if index == 0 else 0)
+            image.paste(Image.new("RGBA", (big, big), fill), (0, 0), layer)
         if mask:
             alpha = Image.new("L", (big, big), 0)
             if mask == "circle":

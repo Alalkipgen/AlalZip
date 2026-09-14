@@ -67,11 +67,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -104,6 +106,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.archivepocket.core.ArchivePreview
 import app.archivepocket.data.Entry
+import kotlin.math.hypot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -324,27 +327,49 @@ private fun ArchiveGlyph(size: Dp) {
     Canvas(Modifier.size(size)) {
         val w = this.size.width; val h = this.size.height
         drawRoundRect(Brush.linearGradient(listOf(IndigoDeep, IndigoLight)), Offset(0f, 0f), Size(w, h), CornerRadius(w * 0.26f))
-        // Mirrors the launcher mark: a white tile whose zipper is open at the top.
-        drawRoundRect(Color.White, Offset(w * 0.12f, h * 0.12f), Size(w * 0.76f, h * 0.76f), CornerRadius(w * 0.21f))
-        val wedge = Path().apply {
-            moveTo(w * 0.5f, h * 0.517f)
-            lineTo(w * 0.343f, h * 0.12f)
-            lineTo(w * 0.657f, h * 0.12f)
-            close()
+        // Mirrors the launcher mark: one vertical zipper, open above the amber slider.
+        val unit = w * 0.0072f
+        fun px(x: Float) = w / 2f + (x - 54f) * unit
+        fun py(y: Float) = h / 2f + (y - 54f) * unit
+        fun tape(ax: Float, ay: Float, bx: Float, by: Float) {
+            val span = hypot(bx - ax, by - ay)
+            val ux = (bx - ax) / span; val uy = (by - ay) / span
+            repeat(6) { index ->
+                val centre = (index + 0.5f) * span / 6f
+                val cx = ax + ux * centre; val cy = ay + uy * centre
+                val alongX = ux * 1.7f; val alongY = uy * 1.7f
+                val acrossX = -uy * 6f; val acrossY = ux * 6f
+                val tooth = Path().apply {
+                    moveTo(px(cx - alongX + acrossX), py(cy - alongY + acrossY))
+                    lineTo(px(cx + alongX + acrossX), py(cy + alongY + acrossY))
+                    lineTo(px(cx + alongX - acrossX), py(cy + alongY - acrossY))
+                    lineTo(px(cx - alongX - acrossX), py(cy - alongY - acrossY))
+                    close()
+                }
+                drawPath(tooth, Color.White)
+            }
         }
-        drawPath(wedge, IndigoLight)
-        val seamHalf = w * 0.036f
-        drawRect(IndigoLight, Offset(w * 0.5f - seamHalf, h * 0.566f), Size(seamHalf * 2, h * 0.231f))
-        var y = h * 0.592f
+        tape(46f, 38f, 16f, -4f)
+        tape(62f, 38f, 92f, -4f)
+        var y = 84f
         var left = true
-        while (y + h * 0.036f <= h * 0.797f) {
-            val x = if (left) w * 0.5f - seamHalf - w * 0.053f else w * 0.5f + seamHalf
-            drawRect(IndigoLight, Offset(x, y), Size(w * 0.053f, h * 0.036f))
+        while (y < 112f) {
+            val x = if (left) 44f else 53.4f
+            drawRoundRect(Color.White, Offset(px(x), py(y)), Size(10.6f * unit, 3.4f * unit), CornerRadius(1.4f * unit))
             left = !left
-            y += h * 0.05f
+            y += 4.7f
         }
-        drawRoundRect(Amber, Offset(w * 0.401f, h * 0.444f), Size(w * 0.198f, h * 0.145f), CornerRadius(w * 0.046f))
-        drawRoundRect(AmberDark, Offset(w * 0.467f, h * 0.583f), Size(w * 0.066f, h * 0.165f), CornerRadius(w * 0.03f))
+        fun slider(outer: List<Float>, hole: List<Float>, colour: Color) {
+            val path = Path().apply {
+                fillType = PathFillType.EvenOdd
+                addRoundRect(RoundRect(px(outer[0]), py(outer[1]), px(outer[2]), py(outer[3]), CornerRadius(outer[4] * unit)))
+                addRoundRect(RoundRect(px(hole[0]), py(hole[1]), px(hole[2]), py(hole[3]), CornerRadius(hole[4] * unit)))
+            }
+            drawPath(path, colour)
+        }
+        drawRoundRect(Amber, Offset(px(38f), py(36f)), Size(32f * unit, 20f * unit), CornerRadius(9.5f * unit))
+        slider(listOf(43f, 44f, 65f, 84f, 7f), listOf(48.5f, 66f, 59.5f, 77f, 3.4f), Amber)
+        slider(listOf(46.5f, 22f, 61.5f, 50f, 7.2f), listOf(50.3f, 26f, 57.7f, 43f, 3.6f), AmberDark)
     }
 }
 
@@ -941,7 +966,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             "about" -> PocketDialog(
-                title = "Alal Zip", subtitle = "Version 0.6.2  \u00b7  offline, no internet permission",
+                title = "Alal Zip", subtitle = "Version 0.6.3  \u00b7  offline, no internet permission",
                 onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null }, dismissLabel = null,
                 glyph = { ArchiveGlyph(40.dp) }
             ) {

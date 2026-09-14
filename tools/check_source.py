@@ -98,7 +98,7 @@ class SourceChecks(unittest.TestCase):
             self.assertEqual("adaptive-icon", icon.tag)
             for layer in ("background", "foreground"):
                 self.assertEqual("@drawable/ic_launcher_" + layer, icon.find(layer).get(android + "drawable"))
-        # Background is the violet brand gradient; foreground is the white tile plus violet teeth and amber slider.
+        # Background is the violet brand gradient; foreground is the white zipper plus the amber slider.
         background = ET.parse(res / "drawable/ic_launcher_background.xml").getroot()
         self.assertEqual("vector", background.tag)
         gradient = next(background.iter("gradient"), None)
@@ -109,7 +109,6 @@ class SourceChecks(unittest.TestCase):
         fills = {path.get(android + "fillColor") for path in foreground.findall("path")}
         self.assertIn("#FFB300", fills)
         self.assertIn("#FF8F00", fills)
-        self.assertIn("#4B3BD1", fills)
         self.assertNotIn("#FFC64D", fills)
         try:
             from generate_icons import CORNERS  # needs pillow; skipped when unavailable
