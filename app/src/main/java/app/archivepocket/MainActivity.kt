@@ -984,7 +984,7 @@ private fun FolderPickerDialog(start: File, root: File, dismiss: () -> Unit, sel
     var reload by remember { mutableStateOf(0) }
     LaunchedEffect(folder.path, reload) {
         val listed = withContext(Dispatchers.IO) {
-            folder.listFiles()?.filter { it.isDirectory }?.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            folder.listFiles()?.filter { it.isDirectory }?.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { child: File -> child.name })
         }
         failed = listed == null
         children = listed ?: emptyList()
