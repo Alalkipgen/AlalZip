@@ -29,8 +29,16 @@ class OperationControl(private val progress: (Long, String) -> Unit = { _, _ -> 
 object Safety {
     const val MAX_ENTRIES = 10_000
     const val MAX_DEPTH = 32
-    const val MAX_EXPANDED = 2L * 1024 * 1024 * 1024
     const val RESERVE = 64L * 1024 * 1024
+    /** Above this size a copy is not re-read for a hash unless the user asks for full verification. */
+    const val VERIFY_LIMIT = 512L * 1024 * 1024
+    /** Decompression-ratio ceiling that keeps zip bombs out while allowing huge ordinary archives. */
+    const val MAX_RATIO = 1000L
+    /**
+     * Expansion ceiling for one operation: whatever the destination volume can still hold minus the
+     * reserve. This replaces the old fixed 2 GiB cap, so a 4 GiB archive extracts on a volume with room.
+     */
+    fun expansionLimit(root: File): Long = (root.usableSpace - RESERVE).coerceAtLeast(0L)
     fun name(value: String): String {
         if (value.isBlank() || value == "." || value == ".." || value.length > 240 ||
             value.any { it == '/' || it == '\\' || it == ':' || it.code < 32 }) {
@@ -59,6 +67,7 @@ object Safety {
                  limit: Long = Long.MAX_VALUE, spaceRoot: File? = null): ByteArray {
         val digest = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(64 * 1024)
+        val watch = spaceRoot?.let { SpaceWatch(it) }
         var total = 0L
         while (true) {
             control.check()
@@ -66,7 +75,7 @@ object Safety {
             if (n < 0) break
             if (n == 0) continue
             if (n > limit - total) throw PocketError("Safety size limit exceeded.")
-            spaceRoot?.let { space(it, n.toLong()) }
+            watch?.consume(n.toLong())
             output.write(buffer, 0, n)
             digest.update(buffer, 0, n)
             total += n
@@ -78,19 +87,36 @@ object Safety {
         transfer(input, object : OutputStream() { override fun write(b: Int) {} override fun write(b: ByteArray, off: Int, len: Int) {} }, control, "Verifying copy")
 }
 
-class ExpansionBudget(private val compressedSize: Long) {
+/**
+ * Throttled free-space guard. Asking the filesystem for its free space on every 64 KiB block costs
+ * one syscall per block, which is measurable on multi-gigabyte writes, so re-check once per step and
+ * always demand a whole step of headroom.
+ */
+class SpaceWatch(private val root: File, private val step: Long = 32L * 1024 * 1024) {
+    private var remaining = 0L
+    fun consume(count: Long) {
+        remaining -= count
+        if (remaining <= 0) { Safety.space(root, step); remaining = step }
+    }
+}
+
+/** [limit] is the number of expanded bytes this operation may still write to its destination volume. */
+class ExpansionBudget(private val compressedSize: Long, private val limit: Long) {
     private var total = 0L
     private var entries = 0
     private val names = HashSet<String>()
+    private fun outOfRoom(): PocketError = PocketError(
+        "Not enough free space to expand this archive (about ${limit / (1024 * 1024)} MiB usable here). Free space and try again."
+    )
     fun entry(name: String, declared: Long) {
         if (++entries > Safety.MAX_ENTRIES) throw PocketError("Too many archive entries (limit 10,000).")
         if (!names.add(java.text.Normalizer.normalize(Safety.relative(name), java.text.Normalizer.Form.NFC).lowercase(java.util.Locale.ROOT))) throw PocketError("Duplicate/case-colliding archive paths are not supported.")
-        if (declared < 0 || declared > Safety.MAX_EXPANDED - total) throw PocketError("Expanded archive exceeds 2 GiB safety limit.")
+        if (declared < 0 || declared > limit - total) throw outOfRoom()
     }
     fun add(count: Int) {
-        if (count > Safety.MAX_EXPANDED - total) throw PocketError("Expanded archive exceeds 2 GiB safety limit.")
+        if (count > limit - total) throw outOfRoom()
         total += count
-        if (total > 16L * 1024 * 1024 && total / compressedSize.coerceAtLeast(1) > 1000) {
+        if (total > 16L * 1024 * 1024 && total / compressedSize.coerceAtLeast(1) > Safety.MAX_RATIO) {
             throw PocketError("Excessive decompression ratio (over 1000:1).")
         }
     }

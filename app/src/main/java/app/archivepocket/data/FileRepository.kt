@@ -30,6 +30,12 @@ class FileRepository(context: Context) {
     private val shareRoot = File(context.cacheDir, "shared-preview")
     val root: File = Environment.getExternalStorageDirectory()
 
+    /**
+     * When false, copies larger than [Safety.VERIFY_LIMIT] are not re-read for a SHA-256 comparison;
+     * size and modification time still have to match. Re-reading doubles the time for huge files.
+     */
+    var verifyLargeFiles: Boolean = false
+
     /** Free and total bytes of the shared storage volume. */
     fun storage(): Pair<Long, Long> = try {
         val stats = StatFs(root.path)
@@ -50,7 +56,8 @@ class FileRepository(context: Context) {
     fun list(dir: File): List<Entry> {
         if (!dir.isDirectory) throw PocketError("Folder is not available.")
         val children = dir.listFiles() ?: throw PocketError("Cannot read this folder. Check that storage access (All files access) is allowed.")
-        return children.map(::entry)
+        // Staging folders of a running operation are an implementation detail, never a browsable entry.
+        return children.filterNot { it.name.startsWith(STAGING_PREFIX) }.map(::entry)
     }
     fun createFolder(parent: File, name: String) {
         Safety.name(name)
@@ -74,22 +81,27 @@ class FileRepository(context: Context) {
     }
 
     private fun open(file: File): InputStream = file.inputStream()
-    private fun workspace(): File {
-        if (!tempRoot.isDirectory && !tempRoot.mkdirs()) throw PocketError("Cannot create private temporary storage.")
-        Safety.space(tempRoot)
-        return File(tempRoot, "op-${UUID.randomUUID()}").also { if (!it.mkdir()) throw PocketError("Cannot create workspace.") }
-    }
     fun cleanAbandoned() {
         // Called only when the ViewModel is constructed, before operations can start.
+        // "op-" folders are leftovers from the older cache-staged operations.
         tempRoot.listFiles()?.filter { it.name.startsWith("op-") }?.forEach {
             if (!it.deleteRecursively()) throw PocketError("Cannot clean previous private temporary files. Clear app cache from Android Settings.")
         }
         shareRoot.listFiles()?.forEach { it.deleteRecursively() }
     }
-    private fun <T> temporary(block: (File) -> T): T {
-        val work = workspace()
+
+    /**
+     * Runs [block] with a staging folder that lives on the destination volume, so finished results can
+     * be moved into place with an atomic rename instead of a second full copy. Large archives therefore
+     * need free space once, not twice, and never touch the app's private cache.
+     */
+    private fun <T> staged(destination: File, block: (File) -> T): T {
+        if (!destination.isDirectory) throw PocketError("Destination folder is not available.")
+        Safety.space(destination)
+        val work = File(destination, "$STAGING_PREFIX${UUID.randomUUID().toString().take(8)}")
+        if (work.exists() || !work.mkdir()) throw PocketError("Cannot create a temporary folder in the destination.")
         try { return block(work) } finally {
-            if (!work.deleteRecursively()) throw PocketError("Temporary cleanup failed. Clear Alal Zip cache in Android Settings; completed destination files may remain.")
+            if (!work.deleteRecursively()) throw PocketError("Temporary cleanup failed: remove \u201c${work.name}\u201d from the destination folder.")
         }
     }
 
@@ -98,6 +110,13 @@ class FileRepository(context: Context) {
         val current = source.file
         if (current.length() != source.size || current.lastModified() != source.modified) {
             throw PocketError("Source changed after copying; source retained.")
+        }
+        if (copied.length() != source.size) throw PocketError("Destination size differs from the source; source retained.")
+        // Hashing a multi-gigabyte pair costs two more full reads, so honour the verification setting.
+        if (!verifyLargeFiles && source.size > Safety.VERIFY_LIMIT) {
+            control.check()
+            if (!current.delete()) throw PocketError("Copy completed, but source deletion failed. Both copies remain.")
+            return
         }
         val sourceHash = open(current).use { Safety.digest(it, control) }
         val destinationHash = open(copied).use { Safety.digest(it, control) }
@@ -115,8 +134,10 @@ class FileRepository(context: Context) {
             val expected = source().use { input ->
                 created.outputStream().use { out -> Safety.transfer(input, out, control, name, spaceRoot = parent) }
             }
-            val actual = open(created).use { Safety.digest(it, control) }
-            if (!expected.contentEquals(actual)) throw PocketError("Copy verification failed; source retained.")
+            if (verifyLargeFiles || created.length() <= Safety.VERIFY_LIMIT) {
+                val actual = open(created).use { Safety.digest(it, control) }
+                if (!expected.contentEquals(actual)) throw PocketError("Copy verification failed; source retained.")
+            }
             control.check()
             return created
         } catch (error: Exception) {
@@ -193,15 +214,15 @@ class FileRepository(context: Context) {
         }
     }
 
-    fun zip(entries: List<Entry>, destination: File, name: String, password: CharArray?, control: OperationControl, confirm: (String) -> Boolean) = temporary { work ->
+    fun zip(entries: List<Entry>, destination: File, name: String, password: CharArray?, control: OperationControl, confirm: (String) -> Boolean) = staged(destination) { work ->
         Safety.name(name)
-        if (!destination.isDirectory) throw PocketError("Destination folder is not available.")
         val planned = plan(entries, control)
         val sources = planned.map { p -> ArchiveSource(p.path, p.entry.directory) { open(p.entry.file) } }
         val output = File(work, "created.zip")
         ArchiveEngine.createZip(sources, output, password, control)
         makeRoom(destination, name, confirm)
-        writeVerified(destination, name, control) { output.inputStream() }
+        // Same volume: the finished archive is renamed into place, so it is never copied twice.
+        if (!output.renameTo(File(destination, Safety.name(name)))) writeVerified(destination, name, control) { output.inputStream() }
         Unit
     }
 
@@ -230,10 +251,9 @@ class FileRepository(context: Context) {
         }
     }
 
-    /** "Extract here": unpacks into a private workspace first, then moves the results into [destination] with collision checks. */
-    fun extractHere(source: Entry, destination: File, password: CharArray?, control: OperationControl, confirm: (String) -> Boolean) = temporary { work ->
+    /** "Extract here": unpacks into a staging folder on the destination volume, then renames the results into [destination] with collision checks. */
+    fun extractHere(source: Entry, destination: File, password: CharArray?, control: OperationControl, confirm: (String) -> Boolean) = staged(destination) { work ->
         if (source.directory) throw PocketError("Select an archive file, not a folder.")
-        if (!destination.isDirectory) throw PocketError("Destination folder is not available.")
         val out = File(work, "extract")
         if (!out.mkdir()) throw PocketError("Cannot create temporary extraction folder.")
         ArchiveEngine.extract(source.file, out, password, control)
@@ -257,5 +277,10 @@ class FileRepository(context: Context) {
             if (runCatching { deleteTree(root, OperationControl()) }.isFailure) throw PocketError("Extraction failed; partial destination remains. Original archive retained.")
             throw error
         }
+    }
+
+    private companion object {
+        /** Prefix of the destination-volume staging folders created by [staged]. */
+        const val STAGING_PREFIX = ".alalzip-tmp-"
     }
 }

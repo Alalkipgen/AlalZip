@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.media.ThumbnailUtils
 import android.net.Uri
@@ -550,6 +551,13 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
     var contextPath by remember { mutableStateOf<String?>(null) } // entry whose long-press menu is open
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.checkAccess() }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // Long operations keep running through a foreground service; this permission only makes their progress visible.
+    LaunchedEffect(state.granted) {
+        if (state.granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.checkAccess() }
     val requestAccess: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -671,6 +679,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             MenuItem(if (grid) "List view" else "Grid view", true) { menu = false; grid = !grid }
                             MenuItem(if (showHidden) "Hide hidden files" else "Show hidden files", true) { menu = false; showHidden = !showHidden }
                             MenuItem("Theme: ${listOf("System", "Light", "Dark")[theme]}", true) { theme = (theme + 1) % 3 }
+                            MenuItem("Verify large copies: ${if (state.verifyLarge) "On" else "Off"}", true) { model.toggleVerifyLarge() }
                             HorizontalDivider()
                             MenuItem("About", true) { menu = false; dialog = "about" }
                         }
@@ -966,7 +975,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             "about" -> PocketDialog(
-                title = "Alal Zip", subtitle = "Version 0.6.3  \u00b7  offline, no internet permission",
+                title = "Alal Zip", subtitle = "Version 0.7.0  \u00b7  offline, no internet permission",
                 onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null }, dismissLabel = null,
                 glyph = { ArchiveGlyph(40.dp) }
             ) {

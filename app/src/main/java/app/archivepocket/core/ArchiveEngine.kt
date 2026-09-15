@@ -184,10 +184,11 @@ object ArchiveEngine {
         if (file.exists()) throw PocketError("Archive path collision.")
         if (!file.parentFile!!.isDirectory && !file.parentFile!!.mkdirs()) throw PocketError("Cannot create temporary directory.")
         val raw = file.outputStream().buffered()
+        val watch = SpaceWatch(root)
         return object : OutputStream() {
             override fun write(b: Int) { write(byteArrayOf(b.toByte()), 0, 1) }
             override fun write(b: ByteArray, off: Int, len: Int) {
-                control.check(); budget.add(len); Safety.space(root, len.toLong())
+                control.check(); budget.add(len); watch.consume(len.toLong())
                 raw.write(b, off, len); control.advance(len, file.name)
             }
             override fun flush() = raw.flush()
@@ -200,7 +201,7 @@ object ArchiveEngine {
     }
 
     private fun extractZip(input: File, root: File, password: CharArray?, control: OperationControl) {
-        val budget = ExpansionBudget(input.length())
+        val budget = ExpansionBudget(input.length(), Safety.expansionLimit(root))
         ZipFile(input).use { zip ->
             if (password != null) zip.setPassword(password)
             if (zip.isSplitArchive) throw PocketError("Split ZIP archives are not supported in this version.")
@@ -227,7 +228,7 @@ object ArchiveEngine {
     }
 
     private fun extractRar(input: File, root: File, password: CharArray?, control: OperationControl) {
-        val budget = ExpansionBudget(input.length())
+        val budget = ExpansionBudget(input.length(), Safety.expansionLimit(root))
         // Junrar is extraction-only. Its UnRAR-derived code must not be used to develop a RAR archiver.
         // Options defensively copy passwords; upstream has no API to wipe the options copy.
         openRar(input, password).use { rar ->

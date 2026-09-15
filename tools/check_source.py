@@ -22,10 +22,16 @@ class SourceChecks(unittest.TestCase):
         manifest = ET.parse(ROOT / "app/src/main/AndroidManifest.xml").getroot()
         android = "{http://schemas.android.com/apk/res/android}"
         permissions = {p.get(android + "name") for p in manifest.findall("uses-permission")}
-        # Storage-only permissions for direct file-manager browsing; never network.
+        # Storage plus the foreground-service/notification trio for long operations; never network.
         self.assertEqual({"android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE",
-                          "android.permission.MANAGE_EXTERNAL_STORAGE", "android.permission.REQUEST_INSTALL_PACKAGES"}, permissions)
+                          "android.permission.MANAGE_EXTERNAL_STORAGE", "android.permission.REQUEST_INSTALL_PACKAGES",
+                          "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+                          "android.permission.POST_NOTIFICATIONS"}, permissions)
         self.assertNotIn("android.permission.INTERNET", permissions)
+        service = manifest.find("application/service")
+        self.assertEqual(".core.OperationService", service.get(android + "name"))
+        self.assertEqual("dataSync", service.get(android + "foregroundServiceType"))
+        self.assertEqual("false", service.get(android + "exported"))
         self.assertEqual("false", manifest.find("application").get("{http://schemas.android.com/apk/res/android}allowBackup"))
 
     def test_official_wrapper(self):
@@ -48,7 +54,8 @@ class SourceChecks(unittest.TestCase):
 
     def test_no_fake_or_password_logging(self):
         sources = list((ROOT / "app/src/main/java").rglob("*.kt"))
-        self.assertEqual({"MainActivity.kt", "PocketViewModel.kt", "FileRepository.kt", "Safety.kt", "ArchiveEngine.kt"}, {path.name for path in sources})
+        self.assertEqual({"MainActivity.kt", "PocketViewModel.kt", "FileRepository.kt", "Safety.kt", "ArchiveEngine.kt",
+                          "OperationService.kt"}, {path.name for path in sources})
         for path in sources:
             text = path.read_text()
             self.assertNotRegex(text, r"TODO\(|NotImplementedError|Thread\.sleep|android\.util\.Log|println\(")
@@ -65,6 +72,25 @@ class SourceChecks(unittest.TestCase):
             self.assertIn(marker, core)
         for marker in ("deleteVerifiedSource", "sourceHash.contentEquals(destinationHash)", "AP-backup-", "isSymbolicLink", "inside(source.file, destination)", "take(150)"):
             self.assertIn(marker, saf)
+
+    def test_large_archive_support(self):
+        safety = (ROOT / "app/src/main/java/app/archivepocket/core/Safety.kt").read_text()
+        saf = (ROOT / "app/src/main/java/app/archivepocket/data/FileRepository.kt").read_text()
+        service = (ROOT / "app/src/main/java/app/archivepocket/core/OperationService.kt").read_text()
+        # The old fixed 2 GiB expansion cap is gone; free space is the limit, the zip-bomb guards stay.
+        self.assertNotIn("MAX_EXPANDED", safety)
+        for marker in ("fun expansionLimit(", "usableSpace - RESERVE", "MAX_RATIO", "class SpaceWatch", "VERIFY_LIMIT"):
+            self.assertIn(marker, safety)
+        self.assertIn("Excessive decompression ratio", safety)
+        engine = (ROOT / "app/src/main/java/app/archivepocket/core/ArchiveEngine.kt").read_text()
+        self.assertIn("ExpansionBudget(input.length(), Safety.expansionLimit(root))", engine)
+        # Staging happens on the destination volume so results are renamed, not copied twice.
+        for marker in (".alalzip-tmp-", "private fun <T> staged(", "output.renameTo(", "verifyLargeFiles"):
+            self.assertIn(marker, saf)
+        self.assertNotIn("private fun workspace()", saf)
+        for marker in ("startForeground(", "NotificationCompat", "ACTION_CANCEL", "cancelRequest"):
+            self.assertIn(marker, service)
+        self.assertIn("OperationService.update(", (ROOT / "app/src/main/java/app/archivepocket/PocketViewModel.kt").read_text())
 
     def test_dependencies_pinned(self):
         build = (ROOT / "app/build.gradle.kts").read_text()

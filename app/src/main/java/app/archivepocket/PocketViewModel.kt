@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.archivepocket.core.ArchivePreview
 import app.archivepocket.core.OperationControl
+import app.archivepocket.core.OperationService
 import app.archivepocket.core.PasswordRequiredError
 import app.archivepocket.core.PocketError
 import app.archivepocket.data.Entry
@@ -46,6 +47,8 @@ data class PocketState(
     val notice: String? = null, val noticeTarget: File? = null,
     /** Most recently used extraction/ZIP destinations, newest first. */
     val recent: List<String> = emptyList(),
+    /** Re-read and hash copies larger than 512 MiB as well (slower, off by default). */
+    val verifyLarge: Boolean = false,
     val previewing: Boolean = false, val archivePreview: ArchivePreview? = null, val archiveSource: Entry? = null,
     val fileToOpen: File? = null, val passwordRequest: PasswordRequest? = null,
     val free: Long = 0, val total: Long = 0
@@ -62,11 +65,26 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     private var listing: Job? = null
 
     init {
-        mutable.update { it.copy(recent = storedDestinations()) }
+        val verify = preferences.getBoolean(VERIFY_KEY, false)
+        repository.verifyLargeFiles = verify
+        mutable.update { it.copy(recent = storedDestinations(), verifyLarge = verify) }
+        // The notification's Cancel action stops whatever operation is running.
+        OperationService.cancelRequest = { cancel() }
         viewModelScope.launch(Dispatchers.IO) {
             try { repository.cleanAbandoned() } catch (e: Exception) { message(safeError(e)) }
         }
         checkAccess()
+    }
+
+    /**
+     * Full hash verification of huge copies doubles the time because the file has to be read again,
+     * so it is opt-in. Size and timestamp checks always run.
+     */
+    fun toggleVerifyLarge() {
+        val value = !state.value.verifyLarge
+        preferences.edit().putBoolean(VERIFY_KEY, value).apply()
+        repository.verifyLargeFiles = value
+        mutable.update { it.copy(verifyLarge = value) }
     }
 
     private fun safeError(error: Exception): String = when (error) {
@@ -216,9 +234,23 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         askPassword: ((Boolean) -> PasswordRequest)? = null, action: (OperationControl) -> Unit
     ) {
         if (state.value.busy || state.value.loading) { password?.fill('\u0000'); return }
-        val token = OperationControl { bytes, current -> mutable.update { it.copy(progress = bytes, currentItem = current, operation = "$label \u00b7 $current") } }
+        val app = getApplication<Application>()
+        var lastNotification = 0L
+        val token = OperationControl { bytes, current ->
+            mutable.update { it.copy(progress = bytes, currentItem = current, operation = "$label \u00b7 $current") }
+            // Refresh the ongoing notification about once a second; the in-app bar updates far more often.
+            val now = System.currentTimeMillis()
+            if (now - lastNotification > 800) {
+                lastNotification = now
+                val total = state.value.operationTotal
+                val percent = if (total > 0) ((bytes * 100) / total).coerceIn(0, 100).toInt() else OperationService.UNKNOWN
+                OperationService.update(app, label, current, percent)
+            }
+        }
         control = token
         mutable.update { it.copy(busy = true, operation = label, progress = 0, operationTotal = 0, currentItem = "", message = null, notice = null) }
+        // A foreground service keeps long extractions alive when the user leaves the app.
+        OperationService.update(app, label, "", OperationService.UNKNOWN)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Known totals turn the progress bar into a real percentage; unknown ones stay indeterminate.
@@ -234,6 +266,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             catch (e: Exception) { message(safeError(e)) }
             finally {
                 password?.fill('\u0000'); control = null
+                OperationService.stop(app)
                 mutable.update { it.copy(busy = false, selected = emptySet(), operationTotal = 0, currentItem = "") }
                 refresh()
             }
@@ -298,10 +331,16 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             askPassword = { wrong -> PasswordRequest(source, destination, wrongPassword = wrong) }
         ) { repository.extractHere(source, destination, password, it, ::confirm) }
     }
-    override fun onCleared() { cancel(); super.onCleared() }
+    override fun onCleared() {
+        cancel()
+        OperationService.cancelRequest = null
+        OperationService.stop(getApplication<Application>())
+        super.onCleared()
+    }
 
     private companion object {
         const val RECENT_KEY = "recent-destinations"
+        const val VERIFY_KEY = "verify-large-copies"
         const val RECENT_LIMIT = 5
     }
 }
