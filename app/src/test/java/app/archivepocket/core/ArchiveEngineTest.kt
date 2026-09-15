@@ -109,10 +109,18 @@ class ArchiveEngineTest {
         for (name in listOf("../x", "/absolute", "C:\\file", "a//b", "a/./b", "a/../b", "a\u0000b")) {
             expectFailure { Safety.relative(name) }
         }
-        val budget = ExpansionBudget(1)
-        expectFailure { budget.entry("huge", Safety.MAX_EXPANDED + 1) }
-        expectFailure { ExpansionBudget(1).add(17 * 1024 * 1024) }
+        val limit = 64L * 1024 * 1024
+        val budget = ExpansionBudget(1, limit)
+        expectFailure { budget.entry("huge", limit + 1) }
+        expectFailure { ExpansionBudget(1, limit).add(17 * 1024 * 1024) }
         assertEquals("မြန်မာ/日本語.txt", Safety.relative("မြန်မာ/日本語.txt"))
+    }
+    /** The fixed 2 GiB expansion cap is gone: multi-gigabyte entries pass while the volume has room. */
+    @Test fun multiGigabyteEntryFitsWhenSpaceAllows() {
+        val budget = ExpansionBudget(4L * 1024 * 1024 * 1024, 8L * 1024 * 1024 * 1024)
+        budget.entry("series/episode.mkv", 5L * 1024 * 1024 * 1024)
+        expectFailure { budget.entry("series/extra.mkv", 4L * 1024 * 1024 * 1024) }
+        assertTrue(Safety.expansionLimit(temporary.root) >= 0)
     }
     @Test fun emptyZipRoundTrip() {
         val zip = temporary.newFile("empty.zip")
