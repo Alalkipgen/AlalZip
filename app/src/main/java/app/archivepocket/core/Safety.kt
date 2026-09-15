@@ -103,6 +103,7 @@ class SpaceWatch(private val root: File, private val step: Long = 32L * 1024 * 1
 /** [limit] is the number of expanded bytes this operation may still write to its destination volume. */
 class ExpansionBudget(private val compressedSize: Long, private val limit: Long) {
     private var total = 0L
+    private var declared = 0L
     private var entries = 0
     private val names = HashSet<String>()
     private fun outOfRoom(): PocketError = PocketError(
@@ -111,7 +112,9 @@ class ExpansionBudget(private val compressedSize: Long, private val limit: Long)
     fun entry(name: String, declared: Long) {
         if (++entries > Safety.MAX_ENTRIES) throw PocketError("Too many archive entries (limit 10,000).")
         if (!names.add(java.text.Normalizer.normalize(Safety.relative(name), java.text.Normalizer.Form.NFC).lowercase(java.util.Locale.ROOT))) throw PocketError("Duplicate/case-colliding archive paths are not supported.")
-        if (declared < 0 || declared > limit - total) throw outOfRoom()
+        // Declared sizes accumulate, so an archive that cannot fit fails before anything is written.
+        if (declared < 0 || declared > limit - this.declared) throw outOfRoom()
+        this.declared += declared
     }
     fun add(count: Int) {
         if (count > limit - total) throw outOfRoom()
