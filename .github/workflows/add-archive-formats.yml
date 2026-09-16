@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - scripts/add_archive_formats.py
+      - app/src/main/java/app/archivepocket/core/SevenZipSupport.kt
+      - app/src/main/java/app/archivepocket/core/TarGzSupport.kt
 permissions:
   contents: write
 jobs:
