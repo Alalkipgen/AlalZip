@@ -3,6 +3,7 @@ package app.archivepocket.core
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.archivers.tar.TarConstants
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
 import org.apache.commons.compress.compressors.gzip.GzipParameters
@@ -63,7 +64,12 @@ object TarGzSupport {
                     control.check()
                     val entry = tar.nextEntry ?: break
                     if (entry.isSymbolicLink || entry.isLink) throw PocketError("TAR links are not supported.")
-                    if (!entry.isDirectory && !entry.isFile) throw PocketError("TAR special files are not supported.")
+                    // isFile/isDirectory are compatibility predicates, not a strict type allowlist.
+                    // Inspect the stored header flag before any destination path is created.
+                    when (entry.linkFlag) {
+                        TarConstants.LF_NORMAL, TarConstants.LF_OLDNORM, TarConstants.LF_DIR -> Unit
+                        else -> throw PocketError("TAR special files are not supported.")
+                    }
                     if (!tar.canReadEntryData(entry)) throw PocketError("Unsupported TAR entry encoding.")
                     budget.entry(entry.name, entry.size)
                     val target = Safety.target(root, entry.name)
