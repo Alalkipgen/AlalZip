@@ -1,0 +1,60 @@
+=== drawable / mipmap references ===
+app/src/main/java/app/archivepocket/core/OperationService.kt:54:            .setSmallIcon(R.drawable.ic_notification)
+
+=== material icon usage ===
+app/src/main/java/app/archivepocket/MainActivity.kt:407:            Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(size * 0.34f))
+app/src/main/java/app/archivepocket/MainActivity.kt:473:                Icon(Icons.Filled.Share, null, Modifier.size(24.dp), tint = tint)
+app/src/main/java/app/archivepocket/MainActivity.kt:476:                Icon(Icons.Filled.Delete, null, Modifier.size(24.dp), tint = tint)
+app/src/main/java/app/archivepocket/MainActivity.kt:632:                        IconButton(onClick = model::clearSelection) { Icon(Icons.Filled.Close, "Clear selection", tint = Color.White) }
+app/src/main/java/app/archivepocket/MainActivity.kt:638:                            Icon(Icons.Filled.Check, "Select all", tint = Color.White)
+app/src/main/java/app/archivepocket/MainActivity.kt:642:                            IconButton(onClick = { quick = true }) { Icon(Icons.Filled.Menu, "Quick access", tint = Color.White) }
+app/src/main/java/app/archivepocket/MainActivity.kt:645:                                DropdownMenuItem(text = { Text("Internal storage") }, leadingIcon = { Icon(Icons.Filled.Home, null) }, enabled = enabled,
+app/src/main/java/app/archivepocket/MainActivity.kt:660:                            Icon(if (searching) Icons.Filled.Close else Icons.Filled.Search, if (searching) "Close search" else "Search", tint = Color.White)
+app/src/main/java/app/archivepocket/MainActivity.kt:667:                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More", tint = Color.White) }
+app/src/main/java/app/archivepocket/MainActivity.kt:695:                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
+app/src/main/java/app/archivepocket/MainActivity.kt:696:                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
+app/src/main/java/app/archivepocket/MainActivity.kt:769:                            IconButton(onClick = model::refresh, enabled = enabled) { Icon(Icons.Filled.Refresh, "Refresh") }
+app/src/main/java/app/archivepocket/MainActivity.kt:801:                                            Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+app/src/main/java/app/archivepocket/MainActivity.kt:863:                    if (index > 0) Icon(Icons.Filled.KeyboardArrowRight, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+app/src/main/java/app/archivepocket/MainActivity.kt:880:                glyph = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary) }
+app/src/main/java/app/archivepocket/MainActivity.kt:915:                glyph = { Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error) }
+app/src/main/java/app/archivepocket/MainActivity.kt:931:                glyph = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) }
+app/src/main/java/app/archivepocket/MainActivity.kt:1080:                    IconButton(onClick = ::goBack, enabled = !busy) { Icon(Icons.Filled.Close, "Close archive", tint = Color.White) }
+app/src/main/java/app/archivepocket/MainActivity.kt:1090:                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
+app/src/main/java/app/archivepocket/MainActivity.kt:1091:                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
+app/src/main/java/app/archivepocket/MainActivity.kt:1116:                                IconButton(onClick = { menuPath = node.path }, enabled = !busy) { Icon(Icons.Filled.MoreVert, "File options") }
+app/src/main/java/app/archivepocket/MainActivity.kt:1215:        Icon(Icons.Filled.KeyboardArrowRight, "Change destination folder", tint = MaterialTheme.colorScheme.primary)
+app/src/main/java/app/archivepocket/MainActivity.kt:1432:                        Icon(Icons.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+
+=== archive/zip icon helpers ===
+app/src/main/java/app/archivepocket/MainActivity.kt:49:import androidx.compose.material.icons.Icons
+app/src/main/java/app/archivepocket/MainActivity.kt:50:import androidx.compose.material.icons.filled.Check
+app/src/main/java/app/archivepocket/MainActivity.kt:51:import androidx.compose.material.icons.filled.Close
+app/src/main/java/app/archivepocket/MainActivity.kt:52:import androidx.compose.material.icons.filled.Delete
+app/src/main/java/app/archivepocket/MainActivity.kt:53:import androidx.compose.material.icons.filled.Home
+app/src/main/java/app/archivepocket/MainActivity.kt:54:import androidx.compose.material.icons.filled.Info
+app/src/main/java/app/archivepocket/MainActivity.kt:55:import androidx.compose.material.icons.filled.KeyboardArrowRight
+app/src/main/java/app/archivepocket/MainActivity.kt:56:import androidx.compose.material.icons.filled.Menu
+app/src/main/java/app/archivepocket/MainActivity.kt:57:import androidx.compose.material.icons.filled.MoreVert
+app/src/main/java/app/archivepocket/MainActivity.kt:58:import androidx.compose.material.icons.filled.PlayArrow
+app/src/main/java/app/archivepocket/MainActivity.kt:59:import androidx.compose.material.icons.filled.Refresh
+app/src/main/java/app/archivepocket/MainActivity.kt:60:import androidx.compose.material.icons.filled.Search
+app/src/main/java/app/archivepocket/MainActivity.kt:61:import androidx.compose.material.icons.filled.Share
+app/src/main/java/app/archivepocket/MainActivity.kt:62:import androidx.compose.material.icons.filled.Warning
+app/src/main/java/app/archivepocket/MainActivity.kt:131:private val Amber = Color(0xFFFFB300)        // accent taken from the launcher icon's zipper slider
+app/src/main/java/app/archivepocket/MainActivity.kt:137:// Brand wordmark uses the same serif italic voice as the launcher icon; the rest of the UI is a clean sans.
+app/src/main/java/app/archivepocket/MainActivity.kt:284:            info.loadIcon(pm).toBitmap(192, 192).asImageBitmap()
+app/src/main/java/app/archivepocket/MainActivity.kt:305:// ---------------------------------------------------------------- icons
+app/src/main/java/app/archivepocket/MainActivity.kt:325:/** Archive glyph that mirrors the launcher icon: violet tile, white zipper, amber slider. */
+app/src/main/java/app/archivepocket/MainActivity.kt:396:/** Thumbnail (image / video frame / APK icon) when available, otherwise a type-specific glyph. */
+app/src/main/java/app/archivepocket/MainActivity.kt:448:private fun ArchiveIcon(extract: Boolean, enabled: Boolean, description: String, onClick: () -> Unit) {
+app/src/main/java/app/archivepocket/MainActivity.kt:449:    IconButton(onClick = onClick, enabled = enabled) {
+app/src/main/java/app/archivepocket/MainActivity.kt:637:                        IconButton(onClick = model::selectAll, enabled = enabled && state.entries.isNotEmpty()) {
+app/src/main/java/app/archivepocket/MainActivity.kt:648:                                    DropdownMenuItem(text = { Text(label) }, leadingIcon = { FolderGlyph(22.dp) }, enabled = enabled,
+app/src/main/java/app/archivepocket/MainActivity.kt:659:                        IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+app/src/main/java/app/archivepocket/MainActivity.kt:662:                        IconButton(onClick = { grid = !grid }) {
+app/src/main/java/app/archivepocket/MainActivity.kt:1085:                    ArchiveIcon(extract = true, enabled = !busy, description = "Extract all") { extractAll() }
+app/src/main/java/app/archivepocket/MainActivity.kt:1266:        trailingIcon = {
+app/src/main/java/app/archivepocket/MainActivity.kt:1343:            leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
+app/src/main/java/app/archivepocket/MainActivity.kt:1403:                        leadingIcon = { FolderGlyph(18.dp) },
+app/src/main/java/app/archivepocket/core/OperationService.kt:54:            .setSmallIcon(R.drawable.ic_notification)
