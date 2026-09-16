@@ -20,9 +20,12 @@ data class ArchiveItem(val path: String, val directory: Boolean, val size: Long)
 data class ArchivePreview(val archiveName: String, val items: List<ArchiveItem>)
 
 object ArchiveEngine {
-    private const val MAX_OPEN_SIZE = 512L * 1024 * 1024
+    internal const val MAX_OPEN_SIZE = 512L * 1024 * 1024
 
     private fun hasPassword(password: CharArray?): Boolean = password != null && password.isNotEmpty()
+
+    /** RAR5 signature is `Rar!\x1a\x07\x01\x00`; RAR4 ends with `\x00`. */
+    private fun isRar5(signature: ByteArray, count: Int): Boolean = count >= 8 && signature[6] == 1.toByte() && signature[7] == 0.toByte()
 
     /** An encrypted ZIP without a password asks before extracting any entries. */
     private fun requireZipPassword(zip: ZipFile, password: CharArray?) {
@@ -66,7 +69,7 @@ object ArchiveEngine {
                 zip.fileHeaders.map { header -> ArchiveItem(header.fileName, header.isDirectory, header.uncompressedSize) }
             }
             count >= 7 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> {
-                if (signature[6] != 0.toByte() && !(count >= 8 && signature[6] == 1.toByte() && signature[7] == 0.toByte())) {
+                if (signature[6] != 0.toByte() && !isRar5(signature, count)) {
                     throw PocketError("Unsupported RAR signature.")
                 }
                 Archive(input, ArchiveOptions.builder().maxDictionarySize(64L * 1024 * 1024).build()).use { rar ->
@@ -106,6 +109,10 @@ object ArchiveEngine {
                 if (output.length() != header.uncompressedSize) throw PocketError("ZIP entry size mismatch.")
             }
             count >= 7 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> {
+                // Native C++ unpacker first: it is the same class of engine RAR apps use and it replays solid
+                // predecessors natively. Pure-Java junrar stays as the fallback for host JVM tests and for
+                // anything the native engine declines to open, keeping the established error mapping.
+                if (SevenZipSupport.openRarItem(input, wanted, output, password, control, isRar5(signature, count))) return
                 openRar(input, password).use { rar ->
                     if (rar.hasBrokenHeaders()) throw PocketError("RAR has damaged/truncated headers.")
                     val headers = rar.fileHeaders
@@ -176,7 +183,8 @@ object ArchiveEngine {
             }
         }
 
-    private fun openItemOutput(output: File, declaredSize: Long, control: OperationControl): OutputStream {
+    /** Bounded, space-watched sink for a single previewed member; shared by the Java and native paths. */
+    internal fun openItemOutput(output: File, declaredSize: Long, control: OperationControl): OutputStream {
         if (declaredSize < 0 || declaredSize > MAX_OPEN_SIZE) throw PocketError("File is too large to open from an archive (512 MiB limit). Extract it first.")
         Safety.space(output.parentFile!!, declaredSize)
         val raw = output.outputStream().buffered(Safety.IO_BUFFER_SIZE)
@@ -245,10 +253,13 @@ object ArchiveEngine {
                 TarGzSupport.extract(input, destination, control)
             }
             count >= 7 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> {
-                if (signature[6] != 0.toByte() && !(count >= 8 && signature[6] == 1.toByte() && signature[7] == 0.toByte())) {
+                if (signature[6] != 0.toByte() && !isRar5(signature, count)) {
                     throw PocketError("Unsupported RAR signature. Only RAR4/RAR5 containers are accepted.")
                 }
-                extractRar(input, destination, password, control)
+                // Native unpacker first (fast, C++); junrar fallback when it is unavailable or declines the file.
+                if (!SevenZipSupport.extractRar(input, destination, password, control, isRar5(signature, count))) {
+                    extractRar(input, destination, password, control)
+                }
             }
             else -> throw PocketError("Not a supported ZIP, RAR4/RAR5, 7z or TAR.GZ archive (or damaged header).")
         }
