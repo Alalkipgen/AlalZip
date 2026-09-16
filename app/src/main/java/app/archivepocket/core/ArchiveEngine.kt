@@ -108,19 +108,73 @@ object ArchiveEngine {
             count >= 7 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> {
                 openRar(input, password).use { rar ->
                     if (rar.hasBrokenHeaders()) throw PocketError("RAR has damaged/truncated headers.")
-                    val header = rar.fileHeaders.firstOrNull { !it.isDirectory && runCatching { Safety.relative(it.fileName) }.getOrNull() == wanted }
-                        ?: throw PocketError("Archive item was not found.")
-                    if (header.isEncrypted && !hasPassword(password)) throw PasswordRequiredError(false)
-                    if (header.isSplitBefore || header.isSplitAfter || header.redirection != null) throw PocketError("Split or linked RAR entries cannot be opened.")
-                    if (header.isRar5Container && header.rar5WinSize > 64L * 1024 * 1024) throw PocketError("RAR dictionary exceeds the mobile safety limit.")
-                    try { openItemOutput(output, header.fullUnpackSize, control).use { rar.extractFile(header, it) } }
-                    catch (e: RarException) { output.delete(); throw mapRar(e, password) }
+                    val headers = rar.fileHeaders
+                    if (headers.size > Safety.MAX_ENTRIES) throw PocketError("Too many archive entries.")
+                    val index = headers.indexOfFirst { !it.isDirectory && runCatching { Safety.relative(it.fileName) }.getOrNull() == wanted }
+                    if (index < 0) throw PocketError("Archive item was not found.")
+                    val header = headers[index]
+                    // Junrar otherwise replays solid predecessors into a NullOutputStream that
+                    // only overrides write(Int); Java's bulk fallback loops over every byte.
+                    // Explicit sequential extraction uses a bounded bulk discard instead, retains
+                    // the dictionary in this one Archive instance, and verifies predecessor CRCs.
+                    val solid = rar.mainHeader?.isSolid == true || header.isSolid
+                    val first = if (solid) 0 else index
+                    val budget = ExpansionBudget(input.length(), MAX_OPEN_SIZE)
+                    for (i in first..index) {
+                        control.check()
+                        val member = headers[i]
+                        if (member.isSplitBefore || member.isSplitAfter || member.redirection != null) throw PocketError("Split or linked RAR entries cannot be opened.")
+                        if (member.isRar5Container && member.rar5WinSize > 64L * 1024 * 1024) throw PocketError("RAR dictionary exceeds the mobile safety limit.")
+                        if (member.isEncrypted && !hasPassword(password)) throw PasswordRequiredError(false)
+                        if (member.fullUnpackSize < 0 || member.fullUnpackSize > MAX_OPEN_SIZE) throw PocketError("File or solid RAR prefix is too large to preview. Extract it first.")
+                        budget.entry(member.fileName, member.fullUnpackSize)
+                    }
+                    try {
+                        for (i in first until index) {
+                            control.check()
+                            val member = headers[i]
+                            if (member.isDirectory) continue
+                            val discard = previewDiscard(control, budget, "Preparing solid RAR: ${member.fileName}")
+                            rar.extractFile(member, discard)
+                        }
+                        control.check()
+                        openItemOutput(output, header.fullUnpackSize, control).use { raw ->
+                            val bounded = object : OutputStream() {
+                                override fun write(b: Int) { budget.add(1); raw.write(b) }
+                                override fun write(b: ByteArray, off: Int, len: Int) { budget.add(len); raw.write(b, off, len) }
+                                override fun flush() = raw.flush()
+                            }
+                            rar.extractFile(header, bounded)
+                        }
+                    } catch (e: RarException) {
+                        output.delete()
+                        control.check()
+                        var cause: Throwable? = e
+                        repeat(16) {
+                            val current = cause
+                            if (current is PocketError) throw current
+                            cause = current?.cause
+                        }
+                        throw mapRar(e, password)
+                    }
                     if (output.length() != header.fullUnpackSize) throw PocketError("RAR entry size mismatch.")
                 }
             }
             else -> throw PocketError("Opening items is supported for ZIP and RAR4/RAR5 archives.")
         }
     }
+
+    /** Consume decoded solid-prefix chunks without allocating files or visiting every byte. */
+    internal fun previewDiscard(control: OperationControl, budget: ExpansionBudget, label: String): OutputStream =
+        object : OutputStream() {
+            override fun write(b: Int) { control.check(); budget.add(1); control.advance(1, label) }
+            override fun write(b: ByteArray, off: Int, len: Int) {
+                if (off < 0 || len < 0 || off > b.size - len) throw IndexOutOfBoundsException()
+                control.check()
+                budget.add(len)
+                control.advance(len, label)
+            }
+        }
 
     private fun openItemOutput(output: File, declaredSize: Long, control: OperationControl): OutputStream {
         if (declaredSize < 0 || declaredSize > MAX_OPEN_SIZE) throw PocketError("File is too large to open from an archive (512 MiB limit). Extract it first.")
