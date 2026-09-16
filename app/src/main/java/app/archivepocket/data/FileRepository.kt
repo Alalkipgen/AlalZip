@@ -217,9 +217,17 @@ class FileRepository(context: Context) {
     fun zip(entries: List<Entry>, destination: File, name: String, password: CharArray?, control: OperationControl, confirm: (String) -> Boolean) = staged(destination) { work ->
         Safety.name(name)
         val planned = plan(entries, control)
-        val sources = planned.map { p -> ArchiveSource(p.path, p.entry.directory) { open(p.entry.file) } }
-        val output = File(work, "created.zip")
-        ArchiveEngine.createZip(sources, output, password, control)
+        val sources = planned.map { p -> ArchiveSource(p.path, p.entry.directory, p.entry.size) { open(p.entry.file) } }
+        val lower = name.lowercase(Locale.ROOT)
+        val output = File(work, when { lower.endsWith(".7z") -> "created.7z"; lower.endsWith(".tar.gz") || lower.endsWith(".tgz") -> "created.tar.gz"; else -> "created.zip" })
+        when {
+            lower.endsWith(".7z") -> ArchiveEngine.create7z(sources, output, password, control)
+            lower.endsWith(".tar.gz") || lower.endsWith(".tgz") -> {
+                if (password != null && password.isNotEmpty()) throw PocketError("TAR.GZ does not support passwords. Use 7z for encryption.")
+                ArchiveEngine.createTarGz(sources, output, control)
+            }
+            else -> ArchiveEngine.createZip(sources, output, password, control)
+        }
         makeRoom(destination, name, confirm)
         // Same volume: the finished archive is renamed into place, so it is never copied twice.
         if (!output.renameTo(File(destination, Safety.name(name)))) writeVerified(destination, name, control) { output.inputStream() }

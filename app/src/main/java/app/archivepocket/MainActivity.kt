@@ -1293,13 +1293,15 @@ private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, subm
 private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: List<File>, initialName: String,
                           dismiss: () -> Unit, submit: (String, CharArray?, File) -> Unit) {
     var name by remember { mutableStateOf(initialName) }
+    var format by remember { mutableStateOf("ZIP") }
     // Deliberately not rememberSaveable: passwords must never enter saved instance state.
     var password by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
     var destination by remember(current.path) { mutableStateOf(current) }
     var picking by remember { mutableStateOf(false) }
-    val mismatch = create && repeat.isNotEmpty() && password != repeat
-    val valid = name.isNotBlank() && (!create || password == repeat)
+    val encryptedFormat = format != "TAR.GZ"
+    val mismatch = create && encryptedFormat && repeat.isNotEmpty() && password != repeat
+    val valid = name.isNotBlank() && (!create || !encryptedFormat || password == repeat)
     fun close() { password = ""; repeat = ""; dismiss() }
     if (picking) {
         FolderPickerDialog(start = destination, root = root, recent = recent, dismiss = { picking = false }) { chosen ->
@@ -1314,28 +1316,45 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
         confirmLabel = if (create) "Create" else "Extract",
         confirmEnabled = valid,
         onConfirm = {
-            val chars = if (create) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
+            val chars = if (create && encryptedFormat) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
+            val suffix = when (format) { "7Z" -> ".7z"; "TAR.GZ" -> ".tar.gz"; else -> ".zip" }
+            val finalName = if (!create || name.endsWith(suffix, true) || (format == "TAR.GZ" && name.endsWith(".tgz", true))) name else name.substringBeforeLast('.', name) + suffix
             password = ""; repeat = ""
-            submit(if (create && !name.endsWith(".zip", true)) "$name.zip" else name, chars, destination)
+            submit(finalName, chars, destination)
         },
         onDismissClick = { close() },
         glyph = { ArchiveGlyph(36.dp) }
     ) {
         DestinationRow(destination, root) { picking = true }
+        if (create) {
+            Text("Archive format", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("ZIP", "7Z", "TAR.GZ").forEach { option ->
+                    FilterChip(selected = format == option, onClick = {
+                        format = option
+                        if (option == "TAR.GZ") { password = ""; repeat = "" }
+                    }, label = { Text(option) })
+                }
+            }
+        }
         OutlinedTextField(
             value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = FieldShape,
-            label = { Text(if (create) "ZIP file name" else "Output folder name") },
+            label = { Text(if (create) "$format file name" else "Output folder name") },
             leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
         )
-        if (create) {
+        if (create && encryptedFormat) {
             PasswordField(password, { password = it }, "Password (optional)")
             PasswordField(repeat, { repeat = it }, "Repeat password", isError = mismatch,
                 supporting = if (mismatch) "Passwords do not match." else null)
+        } else if (create) {
+            Text("TAR.GZ has no standard password encryption. Choose 7Z for password protection.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         ExpandableNote(
-            summary = if (create) "The ZIP is created in the destination folder."
+            summary = if (create) "The $format archive is created in the destination folder."
                 else "Files land in a new sub-folder of the destination folder.",
-            details = if (create) "A non-empty password enables AES-256. File names are not hidden, and forgotten passwords cannot be recovered."
+            details = if (create && encryptedFormat) "A non-empty password enables AES-256. 7z also encrypts file names; forgotten passwords cannot be recovered."
+                else if (create) "TAR.GZ is a standard unencrypted tar archive compressed with gzip."
                 else "Encrypted archives ask for their password only when it is needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
         )
     }

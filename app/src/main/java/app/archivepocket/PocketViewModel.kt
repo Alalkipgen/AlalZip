@@ -286,7 +286,8 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     fun zip(name: String, password: CharArray?, target: File? = null) {
         val entries = selected(); val destination = resolveDestination(target)
         if (destination == null || entries.isEmpty()) { password?.fill('\u0000'); return }
-        execute("Create ZIP", password, noticeTarget = destination, expectedBytes = { entries.sumOf { entry -> if (entry.directory) 0L else entry.size } }) {
+        val kind = when { name.endsWith(".7z", true) -> "7z"; name.endsWith(".tar.gz", true) || name.endsWith(".tgz", true) -> "TAR.GZ"; else -> "ZIP" }
+        execute("Create $kind", password, noticeTarget = destination, expectedBytes = { entries.sumOf { entry -> if (entry.directory) 0L else entry.size } }) {
             repository.zip(entries, destination, name, password, it, ::confirm)
         }
     }

@@ -62,6 +62,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("net.lingala.zip4j:zip4j:2.11.6")
     implementation("com.github.junrar:junrar:8.1.1")
+    implementation("com.github.omicronapps:7-Zip-JBinding-4Android:Release-16.02-2.03")
+    implementation("org.apache.commons:commons-compress:1.27.1")
     runtimeOnly("org.slf4j:slf4j-nop:2.0.17")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     testImplementation("junit:junit:4.13.2")

@@ -14,7 +14,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
-data class ArchiveSource(val path: String, val directory: Boolean, val open: () -> InputStream)
+data class ArchiveSource(val path: String, val directory: Boolean, val size: Long = 0, val open: () -> InputStream)
 data class ArchiveItem(val path: String, val directory: Boolean, val size: Long)
 data class ArchivePreview(val archiveName: String, val items: List<ArchiveItem>)
 
@@ -137,6 +137,12 @@ object ArchiveEngine {
         }
     }
 
+    fun create7z(sources: List<ArchiveSource>, output: File, password: CharArray?, control: OperationControl) =
+        SevenZipSupport.create(sources, output, password, control)
+
+    fun createTarGz(sources: List<ArchiveSource>, output: File, control: OperationControl) =
+        TarGzSupport.create(sources, output, control)
+
     fun createZip(sources: List<ArchiveSource>, output: File, password: CharArray?, control: OperationControl) {
         if (sources.size > Safety.MAX_ENTRIES) throw PocketError("Too many selected entries.")
         val seen = HashSet<String>()
@@ -170,13 +176,19 @@ object ArchiveEngine {
         if (count < 2) throw PocketError("Archive header is missing or damaged.")
         when {
             signature[0] == 0x50.toByte() && signature[1] == 0x4b.toByte() -> extractZip(input, destination, password, control)
+            count >= 6 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x37, 0x7a, 0xbc.toByte(), 0xaf.toByte(), 0x27, 0x1c)) ->
+                SevenZipSupport.extract(input, destination, password, control)
+            signature[0] == 0x1f.toByte() && signature[1] == 0x8b.toByte() -> {
+                if (hasPassword(password)) throw PocketError("TAR.GZ does not support passwords. Use 7z for encrypted archives.")
+                TarGzSupport.extract(input, destination, control)
+            }
             count >= 7 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> {
                 if (signature[6] != 0.toByte() && !(signature[6] == 1.toByte() && signature[7] == 0.toByte())) {
                     throw PocketError("Unsupported RAR signature. Only RAR4/RAR5 containers are accepted.")
                 }
                 extractRar(input, destination, password, control)
             }
-            else -> throw PocketError("Not a supported ZIP or RAR4/RAR5 archive (or damaged header).")
+            else -> throw PocketError("Not a supported ZIP, RAR4/RAR5, 7z or TAR.GZ archive (or damaged header).")
         }
     }
 
