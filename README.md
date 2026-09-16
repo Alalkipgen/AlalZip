@@ -50,3 +50,9 @@ python3 /data/user/0/com.vscodroid/files/projects/ArchivePocket/tools/check_sour
 ```
 
 Read KNOWN_LIMITATIONS.md before using real data. This first pass is not a production-ready replacement for a mature archive manager.
+
+## 7z and TAR.GZ support (0.8.0 source)
+
+- Create and extract standard `.7z` archives. Optional passwords use 7z AES encryption and encrypted headers/file names.
+- Create and extract standard `.tar.gz` / `.tgz` archives. TAR.GZ has no standard password-encryption feature, so the UI intentionally directs encrypted archives to 7z.
+- The Create Archive dialog now offers ZIP, 7Z and TAR.GZ. Existing destination staging, free-space checks, zip-bomb limits, cancellation and foreground progress remain active.

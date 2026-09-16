@@ -47,3 +47,9 @@
 ## Next priorities
 
 Compile on a supported desktop; run JUnit + lint; fix actual failures; exercise local/external SAF providers; add foreground-service journaling and process-death recovery; instrument provider collision/cancellation tests; validate RAR crypto and solid variants on Android; then expand advanced features.
+
+## 7z / TAR.GZ
+
+- 7z support uses the Android 7-Zip-JBinding native engine. Password-protected 7z uses AES with encrypted headers. Runtime/device tests should cover every supported CPU ABI.
+- TAR.GZ has no interoperable password-encryption standard. Password creation is therefore unavailable for TAR.GZ; choose 7z when encryption is required.
+- TAR symbolic and hard links are rejected instead of being recreated. 7z and TAR.GZ in-app member browsing is not included yet; full extraction is supported.

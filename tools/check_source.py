@@ -55,7 +55,7 @@ class SourceChecks(unittest.TestCase):
     def test_no_fake_or_password_logging(self):
         sources = list((ROOT / "app/src/main/java").rglob("*.kt"))
         self.assertEqual({"MainActivity.kt", "PocketViewModel.kt", "FileRepository.kt", "Safety.kt", "ArchiveEngine.kt",
-                          "OperationService.kt"}, {path.name for path in sources})
+                          "OperationService.kt", "SevenZipSupport.kt", "TarGzSupport.kt"}, {path.name for path in sources})
         for path in sources:
             text = path.read_text()
             self.assertNotRegex(text, r"TODO\(|NotImplementedError|Thread\.sleep|android\.util\.Log|println\(")
@@ -96,6 +96,8 @@ class SourceChecks(unittest.TestCase):
         build = (ROOT / "app/build.gradle.kts").read_text()
         self.assertIn("net.lingala.zip4j:zip4j:2.11.6", build)
         self.assertIn("com.github.junrar:junrar:8.1.1", build)
+        self.assertIn("com.github.omicronapps:7-Zip-JBinding-4Android:Release-16.02-2.03", build)
+        self.assertIn("org.apache.commons:commons-compress:1.27.1", build)
         self.assertNotRegex(build, r':[+]"|SNAPSHOT')
 
     def test_documentation_and_bundled_notices(self):
