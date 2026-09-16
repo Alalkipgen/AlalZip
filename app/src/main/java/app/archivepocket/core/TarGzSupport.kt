@@ -5,6 +5,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
+import org.apache.commons.compress.compressors.gzip.GzipParameters
 import java.io.File
 import java.io.OutputStream
 
@@ -12,25 +13,42 @@ import java.io.OutputStream
 object TarGzSupport {
     fun create(sources: List<ArchiveSource>, output: File, control: OperationControl) {
         if (sources.size > Safety.MAX_ENTRIES) throw PocketError("Too many selected entries.")
-        GzipCompressorOutputStream(output.outputStream().buffered()).use { gzip ->
-            TarArchiveOutputStream(gzip).use { tar ->
-                tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
-                tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
-                for (source in sources) {
-                    control.check()
-                    val path = Safety.relative(source.path) + if (source.directory) "/" else ""
-                    val entry = TarArchiveEntry(path).apply { if (!source.directory) size = source.size }
-                    tar.putArchiveEntry(entry)
-                    if (!source.directory) source.open().use { input ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            control.check(); val count = input.read(buffer); if (count < 0) break
-                            tar.write(buffer, 0, count); control.advance(count, path)
-                        }
-                    }
-                    tar.closeArchiveEntry()
+        val seen = HashSet<String>()
+        for (source in sources) {
+            control.check()
+            val key = java.text.Normalizer.normalize(Safety.relative(source.path), java.text.Normalizer.Form.NFC).lowercase(java.util.Locale.ROOT)
+            if (!seen.add(key) || source.size < 0) throw PocketError("Duplicate path or invalid source size.")
+        }
+        val buffer = ByteArray(Safety.IO_BUFFER_SIZE)
+        val parameters = GzipParameters().apply { compressionLevel = 1 }
+        val watch = SpaceWatch(output.parentFile!!)
+        output.outputStream().buffered(Safety.IO_BUFFER_SIZE).use { raw ->
+            // Check actual compressed output, including gzip headers/trailers, not just source bytes.
+            val guarded = object : OutputStream() {
+                override fun write(b: Int) { control.check(); watch.consume(1); raw.write(b) }
+                override fun write(b: ByteArray, off: Int, len: Int) {
+                    control.check(); watch.consume(len.toLong()); raw.write(b, off, len)
                 }
-                tar.finish()
+                override fun flush() = raw.flush()
+                override fun close() = raw.close()
+            }
+            GzipCompressorOutputStream(guarded, parameters).use { gzip ->
+                TarArchiveOutputStream(gzip).use { tar ->
+                    tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
+                    tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
+                    for (source in sources) {
+                        control.check()
+                        val path = Safety.relative(source.path) + if (source.directory) "/" else ""
+                        val entry = TarArchiveEntry(path).apply { if (!source.directory) size = source.size }
+                        tar.putArchiveEntry(entry)
+                        if (!source.directory) source.open().use { input ->
+                            val copied = Safety.copyStream(input, tar, control, path, limit = source.size, buffer = buffer)
+                            if (copied != source.size) throw PocketError("Source size changed while creating TAR.GZ.")
+                        }
+                        tar.closeArchiveEntry()
+                    }
+                    tar.finish()
+                }
             }
         }
     }
@@ -38,15 +56,15 @@ object TarGzSupport {
     fun extract(input: File, root: File, control: OperationControl) {
         val budget = ExpansionBudget(input.length(), Safety.expansionLimit(root))
         val watch = SpaceWatch(root)
-        GzipCompressorInputStream(input.inputStream().buffered()).use { gzip ->
+        val buffer = ByteArray(Safety.IO_BUFFER_SIZE)
+        GzipCompressorInputStream(input.inputStream().buffered(Safety.IO_BUFFER_SIZE)).use { gzip ->
             TarArchiveInputStream(gzip).use { tar ->
-                var count = 0
                 while (true) {
                     control.check()
                     val entry = tar.nextEntry ?: break
-                    count++
-                    if (count > Safety.MAX_ENTRIES) throw PocketError("Too many archive entries.")
                     if (entry.isSymbolicLink || entry.isLink) throw PocketError("TAR links are not supported.")
+                    if (!entry.isDirectory && !entry.isFile) throw PocketError("TAR special files are not supported.")
+                    if (!tar.canReadEntryData(entry)) throw PocketError("Unsupported TAR entry encoding.")
                     budget.entry(entry.name, entry.size)
                     val target = Safety.target(root, entry.name)
                     if (entry.isDirectory) {
@@ -54,12 +72,19 @@ object TarGzSupport {
                     } else {
                         if (target.exists()) throw PocketError("Archive path collision.")
                         if (!target.parentFile!!.isDirectory && !target.parentFile!!.mkdirs()) throw PocketError("Cannot create temporary directory.")
-                        bounded(target.outputStream().buffered(), target.name, budget, watch, control).use { out ->
-                            val buffer = ByteArray(64 * 1024)
-                            while (true) { val n = tar.read(buffer); if (n < 0) break; out.write(buffer, 0, n) }
+                        bounded(target.outputStream().buffered(Safety.IO_BUFFER_SIZE), target.name, budget, watch, control).use { out ->
+                            Safety.copyStream(tar, out, control, target.name, limit = entry.size, buffer = buffer, reportProgress = false)
                         }
-                        if (entry.size >= 0 && target.length() != entry.size) throw PocketError("TAR entry size mismatch.")
+                        if (target.length() != entry.size) throw PocketError("TAR entry size mismatch.")
                     }
+                }
+                // TAR ends before the gzip trailer. Drain to EOF so gzip CRC/size checks actually run.
+                // Bound padding as well: a compressed zero tail must not bypass the expansion guard.
+                while (true) {
+                    control.check()
+                    val n = gzip.read(buffer)
+                    if (n < 0) break
+                    if (n > 0) budget.add(n)
                 }
             }
         }

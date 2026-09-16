@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class PocketError(message: String) : IOException(message)
 
-/** The archive is encrypted and no usable password was supplied. `wrongPassword` = a password was tried and rejected. */
+/** The archive is encrypted and no usable password was supplied. */
 class PasswordRequiredError(val wrongPassword: Boolean) : IOException(if (wrongPassword) "Wrong archive password." else "Archive password required.")
 
 class OperationControl(private val progress: (Long, String) -> Unit = { _, _ -> }) {
@@ -30,14 +30,10 @@ object Safety {
     const val MAX_ENTRIES = 10_000
     const val MAX_DEPTH = 32
     const val RESERVE = 64L * 1024 * 1024
-    /** Above this size a copy is not re-read for a hash unless the user asks for full verification. */
     const val VERIFY_LIMIT = 512L * 1024 * 1024
-    /** Decompression-ratio ceiling that keeps zip bombs out while allowing huge ordinary archives. */
     const val MAX_RATIO = 1000L
-    /**
-     * Expansion ceiling for one operation: whatever the destination volume can still hold minus the
-     * reserve. This replaces the old fixed 2 GiB cap, so a 4 GiB archive extracts on a volume with room.
-     */
+    /** Bounded per-operation buffers, not one allocation per archive entry. */
+    const val IO_BUFFER_SIZE = 128 * 1024
     fun expansionLimit(root: File): Long = (root.usableSpace - RESERVE).coerceAtLeast(0L)
     fun name(value: String): String {
         if (value.isBlank() || value == "." || value == ".." || value.length > 240 ||
@@ -59,14 +55,30 @@ object Safety {
         return file
     }
     fun space(root: File, required: Long = 0) {
-        if (required < 0 || root.usableSpace < RESERVE || required > root.usableSpace - RESERVE) {
-            throw PocketError("Not enough private storage. Keep at least 64 MiB free plus temporary archive data.")
+        val available = root.usableSpace
+        if (required < 0 || available < RESERVE || required > available - RESERVE) {
+            throw PocketError("Not enough storage. Keep at least 64 MiB free plus temporary archive data.")
         }
     }
+
+    /** File copies keep SHA-256 verification. Archive codecs already verify CRC/MAC themselves. */
     fun transfer(input: InputStream, output: OutputStream, control: OperationControl, label: String,
                  limit: Long = Long.MAX_VALUE, spaceRoot: File? = null): ByteArray {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(64 * 1024)
+        pump(input, output, control, label, limit, spaceRoot, ByteArray(IO_BUFFER_SIZE), digest, true)
+        return digest.digest()
+    }
+
+    /** No redundant hash; callers can reuse a buffer and let a bounded output own progress/space. */
+    fun copyStream(input: InputStream, output: OutputStream, control: OperationControl, label: String,
+                   limit: Long = Long.MAX_VALUE, spaceRoot: File? = null,
+                   buffer: ByteArray = ByteArray(IO_BUFFER_SIZE), reportProgress: Boolean = true): Long =
+        pump(input, output, control, label, limit, spaceRoot, buffer, null, reportProgress)
+
+    private fun pump(input: InputStream, output: OutputStream, control: OperationControl, label: String,
+                     limit: Long, spaceRoot: File?, buffer: ByteArray, digest: MessageDigest?,
+                     reportProgress: Boolean): Long {
+        require(buffer.isNotEmpty() && limit >= 0)
         val watch = spaceRoot?.let { SpaceWatch(it) }
         var total = 0L
         while (true) {
@@ -77,26 +89,31 @@ object Safety {
             if (n > limit - total) throw PocketError("Safety size limit exceeded.")
             watch?.consume(n.toLong())
             output.write(buffer, 0, n)
-            digest.update(buffer, 0, n)
+            digest?.update(buffer, 0, n)
             total += n
-            control.advance(n, label)
+            if (reportProgress) control.advance(n, label)
         }
-        return digest.digest()
+        return total
     }
     fun digest(input: InputStream, control: OperationControl): ByteArray =
         transfer(input, object : OutputStream() { override fun write(b: Int) {} override fun write(b: ByteArray, off: Int, len: Int) {} }, control, "Verifying copy")
 }
 
-/**
- * Throttled free-space guard. Asking the filesystem for its free space on every 64 KiB block costs
- * one syscall per block, which is measurable on multi-gigabyte writes, so re-check once per step and
- * always demand a whole step of headroom.
- */
+/** Amortize filesystem queries while accounting for every byte, including a large native chunk. */
 class SpaceWatch(private val root: File, private val step: Long = 32L * 1024 * 1024) {
+    init { require(step > 0) }
     private var remaining = 0L
     fun consume(count: Long) {
+        require(count >= 0)
+        if (count == 0L) return
+        if (count > remaining) {
+            val available = Safety.expansionLimit(root)
+            if (count > available) throw PocketError("Not enough storage. Keep at least 64 MiB free plus temporary archive data.")
+            remaining = minOf(step, available)
+            // If a callback is larger than the polling window, validate it in full and poll next time.
+            if (count > remaining) remaining = count
+        }
         remaining -= count
-        if (remaining <= 0) { Safety.space(root, step); remaining = step }
     }
 }
 
@@ -112,11 +129,11 @@ class ExpansionBudget(private val compressedSize: Long, private val limit: Long)
     fun entry(name: String, declared: Long) {
         if (++entries > Safety.MAX_ENTRIES) throw PocketError("Too many archive entries (limit 10,000).")
         if (!names.add(java.text.Normalizer.normalize(Safety.relative(name), java.text.Normalizer.Form.NFC).lowercase(java.util.Locale.ROOT))) throw PocketError("Duplicate/case-colliding archive paths are not supported.")
-        // Declared sizes accumulate, so an archive that cannot fit fails before anything is written.
         if (declared < 0 || declared > limit - this.declared) throw outOfRoom()
         this.declared += declared
     }
     fun add(count: Int) {
+        require(count >= 0)
         if (count > limit - total) throw outOfRoom()
         total += count
         if (total > 16L * 1024 * 1024 && total / compressedSize.coerceAtLeast(1) > Safety.MAX_RATIO) {

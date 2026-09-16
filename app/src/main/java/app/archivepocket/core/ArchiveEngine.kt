@@ -8,6 +8,7 @@ import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.io.outputstream.ZipOutputStream
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.AesKeyStrength
+import net.lingala.zip4j.model.enums.CompressionLevel
 import net.lingala.zip4j.model.enums.CompressionMethod
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import java.io.File
@@ -23,14 +24,13 @@ object ArchiveEngine {
 
     private fun hasPassword(password: CharArray?): Boolean = password != null && password.isNotEmpty()
 
-    /** RAR-style flow: an encrypted ZIP without a password asks for one instead of failing. */
+    /** An encrypted ZIP without a password asks before extracting any entries. */
     private fun requireZipPassword(zip: ZipFile, password: CharArray?) {
-        if (!hasPassword(password) && runCatching { zip.isEncrypted }.getOrDefault(false)) throw PasswordRequiredError(false)
+        if (!hasPassword(password) && zip.isEncrypted) throw PasswordRequiredError(false)
     }
 
-    /** Translates a Zip4j failure while a password was supplied into a retryable wrong-password signal. */
     private fun mapZip(error: ZipException, password: CharArray?): Exception =
-        if (hasPassword(password) && (error.type == ZipException.Type.WRONG_PASSWORD || error.type == ZipException.Type.CHECKSUM_MISMATCH)) PasswordRequiredError(true) else error
+        if (hasPassword(password) && error.type == ZipException.Type.WRONG_PASSWORD) PasswordRequiredError(true) else error
 
     private fun openRar(input: File, password: CharArray?): Archive {
         val options = ArchiveOptions.builder().password(password).maxDictionarySize(64L * 1024 * 1024).build()
@@ -43,7 +43,6 @@ object ArchiveEngine {
         if (encrypted) throw PasswordRequiredError(false)
     }
 
-    /** Junrar signals encryption problems through exception subclasses; classify by name to stay version-tolerant. */
     private fun mapRar(error: RarException, password: CharArray?): Exception {
         val kind = error.javaClass.simpleName
         return when {
@@ -90,14 +89,18 @@ object ArchiveEngine {
         if (count < 2) throw PocketError("Archive header is missing or damaged.")
         when {
             signature[0] == 0x50.toByte() && signature[1] == 0x4b.toByte() -> ZipFile(input).use { zip ->
+                zip.setBufferSize(Safety.IO_BUFFER_SIZE)
                 if (password != null) zip.setPassword(password)
                 if (zip.isSplitArchive) throw PocketError("Split ZIP entry viewing is not supported.")
                 val header = zip.fileHeaders.firstOrNull { !it.isDirectory && runCatching { Safety.relative(it.fileName) }.getOrNull() == wanted }
                     ?: throw PocketError("Archive item was not found.")
                 if (header.isEncrypted && !hasPassword(password)) throw PasswordRequiredError(false)
                 try {
-                    openItemOutput(output, header.uncompressedSize, control).use { out ->
-                        zip.getInputStream(header).use { stream -> Safety.transfer(stream, out, control, output.name, limit = MAX_OPEN_SIZE, spaceRoot = output.parentFile) }
+                    // Validate the password before creating output. The bounded sink owns byte accounting.
+                    zip.getInputStream(header).use { stream ->
+                        openItemOutput(output, header.uncompressedSize, control).use { out ->
+                            Safety.copyStream(stream, out, control, output.name, limit = MAX_OPEN_SIZE, reportProgress = false)
+                        }
                     }
                 } catch (e: ZipException) { output.delete(); throw mapZip(e, password) }
                 if (output.length() != header.uncompressedSize) throw PocketError("ZIP entry size mismatch.")
@@ -122,14 +125,15 @@ object ArchiveEngine {
     private fun openItemOutput(output: File, declaredSize: Long, control: OperationControl): OutputStream {
         if (declaredSize < 0 || declaredSize > MAX_OPEN_SIZE) throw PocketError("File is too large to open from an archive (512 MiB limit). Extract it first.")
         Safety.space(output.parentFile!!, declaredSize)
-        val raw = output.outputStream().buffered()
+        val raw = output.outputStream().buffered(Safety.IO_BUFFER_SIZE)
+        val watch = SpaceWatch(output.parentFile!!)
         return object : OutputStream() {
             private var written = 0L
             override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
             override fun write(b: ByteArray, off: Int, len: Int) {
                 control.check()
-                if (len > MAX_OPEN_SIZE - written) throw PocketError("Archive item exceeds the 512 MiB viewing limit.")
-                Safety.space(output.parentFile!!, len.toLong())
+                if (len > declaredSize - written) throw PocketError("Archive item exceeds its declared size.")
+                watch.consume(len.toLong())
                 raw.write(b, off, len); written += len; control.advance(len, output.name)
             }
             override fun flush() = raw.flush()
@@ -146,7 +150,8 @@ object ArchiveEngine {
     fun createZip(sources: List<ArchiveSource>, output: File, password: CharArray?, control: OperationControl) {
         if (sources.size > Safety.MAX_ENTRIES) throw PocketError("Too many selected entries.")
         val seen = HashSet<String>()
-        output.outputStream().buffered().use { raw ->
+        val buffer = ByteArray(Safety.IO_BUFFER_SIZE)
+        output.outputStream().buffered(Safety.IO_BUFFER_SIZE).use { raw ->
             ZipOutputStream(raw, password).use { zip ->
                 for (source in sources) {
                     control.check()
@@ -155,6 +160,7 @@ object ArchiveEngine {
                     val parameters = ZipParameters().apply {
                         fileNameInZip = path + if (source.directory) "/" else ""
                         compressionMethod = if (source.directory) CompressionMethod.STORE else CompressionMethod.DEFLATE
+                        compressionLevel = CompressionLevel.FAST
                         if (password != null && password.isNotEmpty() && !source.directory) {
                             isEncryptFiles = true
                             encryptionMethod = EncryptionMethod.AES
@@ -162,7 +168,9 @@ object ArchiveEngine {
                         }
                     }
                     zip.putNextEntry(parameters)
-                    if (!source.directory) source.open().use { Safety.transfer(it, zip, control, path, spaceRoot = output.parentFile) }
+                    if (!source.directory) source.open().use {
+                        Safety.copyStream(it, zip, control, path, spaceRoot = output.parentFile, buffer = buffer)
+                    }
                     zip.closeEntry()
                 }
             }
@@ -183,7 +191,7 @@ object ArchiveEngine {
                 TarGzSupport.extract(input, destination, control)
             }
             count >= 7 && signature.copyOfRange(0, 6).contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> {
-                if (signature[6] != 0.toByte() && !(signature[6] == 1.toByte() && signature[7] == 0.toByte())) {
+                if (signature[6] != 0.toByte() && !(count >= 8 && signature[6] == 1.toByte() && signature[7] == 0.toByte())) {
                     throw PocketError("Unsupported RAR signature. Only RAR4/RAR5 containers are accepted.")
                 }
                 extractRar(input, destination, password, control)
@@ -192,11 +200,10 @@ object ArchiveEngine {
         }
     }
 
-    private fun boundedOutput(file: File, root: File, budget: ExpansionBudget, control: OperationControl): OutputStream {
+    private fun boundedOutput(file: File, budget: ExpansionBudget, control: OperationControl, watch: SpaceWatch): OutputStream {
         if (file.exists()) throw PocketError("Archive path collision.")
         if (!file.parentFile!!.isDirectory && !file.parentFile!!.mkdirs()) throw PocketError("Cannot create temporary directory.")
-        val raw = file.outputStream().buffered()
-        val watch = SpaceWatch(root)
+        val raw = file.outputStream().buffered(Safety.IO_BUFFER_SIZE)
         return object : OutputStream() {
             override fun write(b: Int) { write(byteArrayOf(b.toByte()), 0, 1) }
             override fun write(b: ByteArray, off: Int, len: Int) {
@@ -214,7 +221,10 @@ object ArchiveEngine {
 
     private fun extractZip(input: File, root: File, password: CharArray?, control: OperationControl) {
         val budget = ExpansionBudget(input.length(), Safety.expansionLimit(root))
+        val watch = SpaceWatch(root)
+        val buffer = ByteArray(Safety.IO_BUFFER_SIZE)
         ZipFile(input).use { zip ->
+            zip.setBufferSize(Safety.IO_BUFFER_SIZE)
             if (password != null) zip.setPassword(password)
             if (zip.isSplitArchive) throw PocketError("Split ZIP archives are not supported in this version.")
             requireZipPassword(zip, password)
@@ -226,11 +236,10 @@ object ArchiveEngine {
                 val target = Safety.target(root, header.fileName)
                 // Never recreate archive symlinks: every non-directory entry becomes an ordinary file.
                 if (header.isDirectory) directory(target) else {
-                    // Open the entry stream first: a wrong/missing password fails here, before any output file exists.
                     zip.getInputStream(header).use { stream ->
-                        boundedOutput(target, root, budget, control).use { output ->
-                            val buffer = ByteArray(64 * 1024)
-                            while (true) { control.check(); val n = stream.read(buffer); if (n < 0) break; output.write(buffer, 0, n) }
+                        boundedOutput(target, budget, control, watch).use { output ->
+                            Safety.copyStream(stream, output, control, target.name,
+                                limit = header.uncompressedSize, buffer = buffer, reportProgress = false)
                         }
                     }
                     if (target.length() != header.uncompressedSize) throw PocketError("ZIP entry size mismatch.")
@@ -241,6 +250,7 @@ object ArchiveEngine {
 
     private fun extractRar(input: File, root: File, password: CharArray?, control: OperationControl) {
         val budget = ExpansionBudget(input.length(), Safety.expansionLimit(root))
+        val watch = SpaceWatch(root)
         // Junrar is extraction-only. Its UnRAR-derived code must not be used to develop a RAR archiver.
         // Options defensively copy passwords; upstream has no API to wipe the options copy.
         openRar(input, password).use { rar ->
@@ -256,7 +266,7 @@ object ArchiveEngine {
                 budget.entry(header.fileName, header.fullUnpackSize)
                 val target = Safety.target(root, header.fileName)
                 if (header.isDirectory) directory(target) else {
-                    boundedOutput(target, root, budget, control).use { rar.extractFile(header, it) }
+                    boundedOutput(target, budget, control, watch).use { rar.extractFile(header, it) }
                     if (target.length() != header.fullUnpackSize) throw PocketError("RAR entry size mismatch.")
                 }
             } } catch (e: RarException) { throw mapRar(e, password) }
