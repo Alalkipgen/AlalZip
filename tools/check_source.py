@@ -126,18 +126,22 @@ class SourceChecks(unittest.TestCase):
             self.assertEqual("adaptive-icon", icon.tag)
             for layer in ("background", "foreground"):
                 self.assertEqual("@drawable/ic_launcher_" + layer, icon.find(layer).get(android + "drawable"))
-        # Background is the violet brand gradient; foreground is the white zipper plus the amber slider.
+        # Final brand: four-stop blue tile, white archive box, navy zipper and cyan extraction pull.
         background = ET.parse(res / "drawable/ic_launcher_background.xml").getroot()
         self.assertEqual("vector", background.tag)
         gradient = next(background.iter("gradient"), None)
         self.assertIsNotNone(gradient)
-        self.assertEqual(["#2B1B6E", "#4B3BD1", "#7C5CF0"], [item.get(android + "color") for item in gradient.findall("item")])
-        foreground = ET.parse(res / "drawable/ic_launcher_foreground.xml")
-        self.assertEqual("#FFFFFF", foreground.find("path").get(android + "fillColor"))
-        fills = {path.get(android + "fillColor") for path in foreground.findall("path")}
-        self.assertIn("#FFB300", fills)
-        self.assertIn("#FF8F00", fills)
-        self.assertNotIn("#FFC64D", fills)
+        self.assertEqual(["#FF18A6DF", "#FF1766C4", "#FF17358E", "#FF101447"],
+                         [item.get(android + "color") for item in gradient.findall("item")])
+        foreground = ET.parse(res / "drawable/ic_launcher_foreground.xml").getroot()
+        paths = list(foreground.iter("path"))
+        fills = {path.get(android + "fillColor") for path in paths}
+        gradient_colours = {item.get(android + "color") for item in foreground.iter("item")}
+        self.assertGreaterEqual(len(paths), 9)
+        self.assertIn("#FF173783", fills)
+        self.assertIn("#FFFFFFFF", fills)
+        self.assertIn("#FF59D7FF", gradient_colours)
+        self.assertIn("#FF1B82DF", gradient_colours)
         try:
             from generate_icons import CORNERS  # needs pillow; skipped when unavailable
         except ImportError:

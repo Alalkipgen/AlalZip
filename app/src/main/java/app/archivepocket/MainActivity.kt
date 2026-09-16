@@ -131,10 +131,11 @@ private val Amber = Color(0xFFFFB300)        // accent taken from the launcher i
 private val AmberDark = Color(0xFFFF8F00)
 private val FolderBlue = Color(0xFF63B3FF)
 private val FolderBlueDark = Color(0xFF1C7BE0)
-private val NavyBright = Color(0xFF2A55C8)   // launcher icon: top-left highlight
-private val NavyDeep = Color(0xFF0B1E62)     // launcher icon: body navy
-private val NavyInk = Color(0xFF050A2C)      // launcher icon: bottom-right shadow
-private val PaperBlue = Color(0xFFD8E6FF)    // launcher icon: folder paper shading
+private val NavyBright = Color(0xFF24B2E8)   // final archive-file highlight
+private val NavyMid = Color(0xFF1767C6)      // final archive-file mid blue
+private val NavyDeep = Color(0xFF17378E)     // final archive-file zipper blue
+private val NavyInk = Color(0xFF11194F)      // final archive-file shadow
+private val ZipAccent = Color(0xFF69DEFF)    // final zipper-pull highlight
 private val UpGreen = Color(0xFF34C759)
 
 // Brand wordmark uses the same serif italic voice as the launcher icon; the rest of the UI is a clean sans.
@@ -325,52 +326,45 @@ private fun FolderGlyph(size: Dp, up: Boolean = false) {
     }
 }
 
-/** Archive glyph that mirrors the launcher icon: navy tile, white zip folder, extract arrow. */
+/** Final archive-file glyph: folded blue document, white zipper, cyan extraction pull. */
 @Composable
 private fun ArchiveGlyph(size: Dp) {
     Canvas(Modifier.size(size)) {
         val w = this.size.width
         val h = this.size.height
-        fun px(v: Float) = w * v
-        fun py(v: Float) = h * v
-        drawRoundRect(
-            Brush.linearGradient(listOf(NavyBright, NavyDeep, NavyInk)),
-            Offset(0f, 0f), Size(w, h), CornerRadius(w * 0.26f)
-        )
-        val paper = Brush.verticalGradient(listOf(Color.White, PaperBlue))
-        // Folder tab, then the body: same silhouette as the launcher mark.
-        drawRoundRect(paper, Offset(px(0.15f), py(0.155f)), Size(px(0.30f), py(0.20f)), CornerRadius(w * 0.045f))
-        drawRoundRect(paper, Offset(px(0.13f), py(0.26f)), Size(px(0.74f), py(0.50f)), CornerRadius(w * 0.065f))
-        // Zipper channel splitting the folder, with alternating white teeth.
-        drawRect(NavyDeep, Offset(px(0.455f), py(0.155f)), Size(px(0.09f), py(0.605f)))
-        var toothY = 0.185f
+        fun x(v: Float) = w * v
+        fun y(v: Float) = h * v
+        val file = Path().apply {
+            moveTo(x(0.14f), y(0.04f)); lineTo(x(0.66f), y(0.04f)); lineTo(x(0.92f), y(0.30f))
+            lineTo(x(0.92f), y(0.88f)); quadraticTo(x(0.92f), y(0.96f), x(0.84f), y(0.96f))
+            lineTo(x(0.14f), y(0.96f)); quadraticTo(x(0.06f), y(0.96f), x(0.06f), y(0.88f))
+            lineTo(x(0.06f), y(0.14f)); quadraticTo(x(0.06f), y(0.04f), x(0.14f), y(0.04f)); close()
+        }
+        drawPath(file, Brush.linearGradient(listOf(NavyBright, NavyMid, NavyDeep, NavyInk)))
+        val fold = Path().apply {
+            moveTo(x(0.66f), y(0.04f)); lineTo(x(0.66f), y(0.22f)); quadraticTo(x(0.66f), y(0.30f), x(0.74f), y(0.30f))
+            lineTo(x(0.92f), y(0.30f)); close()
+        }
+        drawPath(fold, Brush.linearGradient(listOf(Color(0xFFA7E9FF), Color(0xFF4CB7ED))))
+        drawRoundRect(NavyInk, Offset(x(0.445f), y(0.04f)), Size(x(0.11f), y(0.61f)), CornerRadius(w * 0.02f))
+        var toothY = 0.10f
         var left = true
-        while (toothY < 0.55f) {
+        repeat(8) {
             val toothX = if (left) 0.395f else 0.50f
-            drawRoundRect(Color.White, Offset(px(toothX), py(toothY)), Size(px(0.105f), py(0.036f)), CornerRadius(w * 0.018f))
-            left = !left
-            toothY += 0.055f
+            drawRoundRect(Color.White, Offset(x(toothX), y(toothY)), Size(x(0.105f), y(0.037f)), CornerRadius(w * 0.012f))
+            toothY += 0.067f; left = !left
         }
-        // Slider head plus the pull tab with its punched-out hole.
-        drawRoundRect(Color.White, Offset(px(0.35f), py(0.555f)), Size(px(0.30f), py(0.135f)), CornerRadius(w * 0.05f))
-        val pull = Path().apply {
-            fillType = PathFillType.EvenOdd
-            addRoundRect(RoundRect(px(0.38f), py(0.675f), px(0.62f), py(0.90f), CornerRadius(w * 0.04f)))
-            addRoundRect(RoundRect(px(0.445f), py(0.735f), px(0.555f), py(0.835f), CornerRadius(w * 0.02f)))
-        }
-        drawPath(pull, Color.White)
-        // Extract arrow.
+        drawRoundRect(
+            Brush.linearGradient(listOf(ZipAccent, Color(0xFF2A91E4))),
+            Offset(x(0.365f), y(0.58f)), Size(x(0.27f), y(0.22f)), CornerRadius(w * 0.07f)
+        )
+        drawRoundRect(Color(0xFFEFFBFF), Offset(x(0.445f), y(0.625f)), Size(x(0.11f), y(0.05f)), CornerRadius(w * 0.02f))
         val arrow = Path().apply {
-            moveTo(px(0.60f), py(0.695f))
-            lineTo(px(0.78f), py(0.695f))
-            lineTo(px(0.78f), py(0.615f))
-            lineTo(px(0.96f), py(0.755f))
-            lineTo(px(0.78f), py(0.895f))
-            lineTo(px(0.78f), py(0.815f))
-            lineTo(px(0.60f), py(0.815f))
-            close()
+            moveTo(x(0.47f), y(0.72f)); lineTo(x(0.53f), y(0.72f)); lineTo(x(0.53f), y(0.79f))
+            lineTo(x(0.60f), y(0.79f)); lineTo(x(0.50f), y(0.89f)); lineTo(x(0.40f), y(0.79f))
+            lineTo(x(0.47f), y(0.79f)); close()
         }
-        drawPath(arrow, Color.White)
+        drawPath(arrow, Color(0xFFEFFBFF))
     }
 }
 
