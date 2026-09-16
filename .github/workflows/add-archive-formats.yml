@@ -6,14 +6,24 @@ on:
       - scripts/add_archive_formats.py
       - app/src/main/java/app/archivepocket/core/SevenZipSupport.kt
       - app/src/main/java/app/archivepocket/core/TarGzSupport.kt
+      - .github/workflows/add-archive-formats.yml
 permissions:
   contents: write
 jobs:
   integrate:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Apply and commit archive-format integration
+        run: |
+          python3 scripts/add_archive_formats.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add settings.gradle.kts app/build.gradle.kts app/proguard-rules.pro app/src/main/java
+          git commit -m 'feat: add encrypted 7z and tar.gz support'
+          git push
       - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
@@ -22,16 +32,7 @@ jobs:
         with:
           accept-android-sdk-licenses: true
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-      - name: Apply archive-format integration
-        run: python3 scripts/add_archive_formats.py
       - name: Build and test
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace
-      - name: Commit verified integration
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add settings.gradle.kts app/build.gradle.kts app/proguard-rules.pro app/src/main/java
-          git commit -m 'feat: add encrypted 7z and tar.gz support'
-          git push
