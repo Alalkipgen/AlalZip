@@ -126,22 +126,25 @@ class SourceChecks(unittest.TestCase):
             self.assertEqual("adaptive-icon", icon.tag)
             for layer in ("background", "foreground"):
                 self.assertEqual("@drawable/ic_launcher_" + layer, icon.find(layer).get(android + "drawable"))
-        # Final brand: four-stop blue tile, white archive box, navy zipper and cyan extraction pull.
+        # v0.8 brand: indigo adaptive tile with a light ZIP document, cyan zipper and extraction arrow.
         background = ET.parse(res / "drawable/ic_launcher_background.xml").getroot()
         self.assertEqual("vector", background.tag)
         gradient = next(background.iter("gradient"), None)
         self.assertIsNotNone(gradient)
-        self.assertEqual(["#FF18A6DF", "#FF1766C4", "#FF17358E", "#FF101447"],
+        self.assertEqual(["#FF3730A3", "#FF211B60"],
                          [item.get(android + "color") for item in gradient.findall("item")])
         foreground = ET.parse(res / "drawable/ic_launcher_foreground.xml").getroot()
         paths = list(foreground.iter("path"))
         fills = {path.get(android + "fillColor") for path in paths}
-        gradient_colours = {item.get(android + "color") for item in foreground.iter("item")}
-        self.assertGreaterEqual(len(paths), 9)
-        self.assertIn("#FF173783", fills)
-        self.assertIn("#FFFFFFFF", fills)
-        self.assertIn("#FF59D7FF", gradient_colours)
-        self.assertIn("#FF1B82DF", gradient_colours)
+        self.assertGreaterEqual(len(paths), 6)
+        for colour in ("#FFF0F3F8", "#FFDCE4EE", "#FF39D5F5", "#FF3730A3", "#FF19164E"):
+            self.assertIn(colour, fills)
+        monochrome = ET.parse(res / "drawable/ic_launcher_monochrome.xml").getroot()
+        self.assertEqual("vector", monochrome.tag)
+        self.assertGreaterEqual(len(list(monochrome.iter("path"))), 2)
+        for name in ("ic_launcher", "ic_launcher_round"):
+            themed = ET.parse(res / "mipmap-anydpi-v33" / (name + ".xml")).getroot()
+            self.assertEqual("@drawable/ic_launcher_monochrome", themed.find("monochrome").get(android + "drawable"))
         try:
             from generate_icons import CORNERS  # needs pillow; skipped when unavailable
         except ImportError:
@@ -164,8 +167,7 @@ class SourceChecks(unittest.TestCase):
                 raw = zlib.decompress(compressed)
                 self.assertEqual(size*(1+size*4), len(raw))
                 pixels = b"".join(raw[y*(1+size*4)+1:(y+1)*(1+size*4)] for y in range(size))
-                self.assertIn(b"\xff\xff\xff\xff", pixels)
-                # Legacy PNGs (unused from API 26 on, where the adaptive vectors apply) stay fully opaque.
+                # Legacy PNGs are unused from API 26 on; retain only format/dimension/opacity checks.
                 self.assertEqual(255, pixels[3])
 
     def test_ci_and_portable_build_configuration(self):
