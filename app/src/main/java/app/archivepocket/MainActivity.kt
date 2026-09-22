@@ -116,13 +116,30 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private var incomingArchive by mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Screenshots stay allowed so users can report UI issues; passwords are always masked and never saved.
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        setContent { PocketApp() }
+        incomingArchive = intent.archiveUri()
+        setContent {
+            PocketApp(
+                incomingArchive = incomingArchive,
+                onIncomingArchiveConsumed = { incomingArchive = null },
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingArchive = intent.archiveUri()
     }
 }
+
+private fun Intent.archiveUri(): Uri? =
+    data?.takeIf { action == Intent.ACTION_VIEW }
 
 // ---------------------------------------------------------------- palette & formatting
 private val Indigo = Color(0xFF4F46E5)
@@ -197,6 +214,18 @@ private enum class FileKind(val label: String, val color: Color) {
 private fun extension(name: String): String = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
 private fun isArchive(name: String): Boolean = extension(name) in ARCHIVE_EXTENSIONS
 private fun isPreviewableArchive(name: String): Boolean = extension(name) in setOf("zip", "zipx", "jar", "rar")
+private fun archiveSuffix(format: String): String = when (format) {
+    "7Z" -> ".7z"
+    "TAR.GZ" -> ".tar.gz"
+    else -> ".zip"
+}
+private fun archiveNameForFormat(name: String, format: String): String {
+    if (name.isBlank()) return name
+    val suffixes = listOf(".tar.gz", ".tgz", ".zip", ".7z")
+    val matched = suffixes.firstOrNull { name.endsWith(it, ignoreCase = true) }
+    val base = if (matched == null) name else name.dropLast(matched.length)
+    return base + archiveSuffix(format)
+}
 private fun fileKind(name: String): FileKind = when (val ext = extension(name)) {
     in IMAGE_EXT -> FileKind.IMAGE
     in VIDEO_EXT -> FileKind.VIDEO
@@ -524,7 +553,11 @@ private fun Modifier.entryGestures(enabled: Boolean, selection: Set<String>, int
 
 // ---------------------------------------------------------------- app
 @Composable
-fun PocketApp(model: PocketViewModel = viewModel()) {
+fun PocketApp(
+    incomingArchive: Uri? = null,
+    onIncomingArchiveConsumed: () -> Unit = {},
+    model: PocketViewModel = viewModel(),
+) {
     val state by model.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -558,6 +591,12 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.checkAccess() }
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(incomingArchive) {
+        incomingArchive?.let { uri ->
+            model.previewExternal(uri)
+            onIncomingArchiveConsumed()
+        }
+    }
     // Long operations keep running through a foreground service; this permission only makes their progress visible.
     LaunchedEffect(state.granted) {
         if (state.granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -984,7 +1023,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             "about" -> PocketDialog(
-                title = "Alal Zip", subtitle = "Version 0.7.0  \u00b7  offline, no internet permission",
+                title = "Alal Zip", subtitle = "Version 0.8.1  \u00b7  offline, no internet permission",
                 onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null }, dismissLabel = null,
                 glyph = { ArchiveGlyph(40.dp) }
             ) {
@@ -1309,24 +1348,22 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
                           dismiss: () -> Unit, submit: (String, CharArray?, File) -> Unit) {
     var name by remember { mutableStateOf(initialName) }
     var format by remember { mutableStateOf("ZIP") }
+    var passwordEnabled by remember { mutableStateOf(false) }
     // Deliberately not rememberSaveable: passwords must never enter saved instance state.
     var password by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
     var destination by remember(current.path) { mutableStateOf(current) }
     var picking by remember { mutableStateOf(false) }
     val encryptedFormat = format != "TAR.GZ"
-    val mismatch = create && encryptedFormat && repeat.isNotEmpty() && password != repeat
-    val valid = name.isNotBlank() && (!create || !encryptedFormat || password == repeat)
-    fun close() { password = ""; repeat = ""; dismiss() }
+    val mismatch = create && encryptedFormat && passwordEnabled && repeat.isNotEmpty() && password != repeat
+    val validPassword = !passwordEnabled || (password.isNotEmpty() && password == repeat)
+    val valid = name.isNotBlank() && (!create || !encryptedFormat || validPassword)
+    fun clearPassword() { password = ""; repeat = "" }
+    fun close() { clearPassword(); dismiss() }
     fun complete() {
-        val chars = if (create && encryptedFormat) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
-        val suffix = when (format) { "7Z" -> ".7z"; "TAR.GZ" -> ".tar.gz"; else -> ".zip" }
-        val finalName = if (!create || name.endsWith(suffix, true) || (format == "TAR.GZ" && name.endsWith(".tgz", true))) {
-            name
-        } else {
-            name.substringBeforeLast('.', name) + suffix
-        }
-        password = ""; repeat = ""
+        val chars = if (create && encryptedFormat && passwordEnabled) password.toCharArray() else null
+        val finalName = if (create) archiveNameForFormat(name, format) else name
+        clearPassword()
         submit(finalName, chars, destination)
     }
     if (picking) {
@@ -1347,70 +1384,112 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
             )
         }
     ) {
+        val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.88f
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            Modifier.fillMaxWidth().heightIn(max = maxSheetHeight).navigationBarsPadding().imePadding()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.secondaryContainer),
-                    contentAlignment = Alignment.Center
-                ) { ArchiveGlyph(32.dp) }
-                Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                    Text(if (create) "Create archive" else "Extract archive", style = MaterialTheme.typography.titleLarge)
+            Column(
+                Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) { ArchiveGlyph(32.dp) }
+                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                        Text(if (create) "Create archive" else "Extract archive", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            if (create) "ZIP, 7Z or TAR.GZ" else "Unpack into a new sub-folder",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                DestinationRow(destination, root) { picking = true }
+                if (create) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Archive format", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("ZIP", "7Z", "TAR.GZ").forEach { option ->
+                                FilterChip(
+                                    selected = format == option,
+                                    onClick = {
+                                        name = archiveNameForFormat(name, option)
+                                        format = option
+                                        if (option == "TAR.GZ") {
+                                            passwordEnabled = false
+                                            clearPassword()
+                                        }
+                                    },
+                                    label = { Text(option) },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    shape = FieldShape, label = { Text(if (create) "$format file name" else "Output folder name") },
+                    leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
+                )
+                if (create && encryptedFormat) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(FieldShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                            .clickable {
+                                passwordEnabled = !passwordEnabled
+                                if (!passwordEnabled) clearPassword()
+                            }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Password protection", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (passwordEnabled) "On \u00b7 AES-256" else "Off \u00b7 create without a password",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = passwordEnabled,
+                            onCheckedChange = { enabled ->
+                                passwordEnabled = enabled
+                                if (!enabled) clearPassword()
+                            }
+                        )
+                    }
+                    if (passwordEnabled) {
+                        PasswordField(password, { password = it }, "Password")
+                        PasswordField(repeat, { repeat = it }, "Repeat password", isError = mismatch,
+                            supporting = if (mismatch) "Passwords do not match." else null)
+                    }
+                } else if (create) {
                     Text(
-                        if (create) "ZIP, 7Z or TAR.GZ" else "Unpack into a new sub-folder",
+                        "TAR.GZ is unencrypted. Choose 7Z when password protection is needed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-            DestinationRow(destination, root) { picking = true }
-            if (create) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Archive format", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("ZIP", "7Z", "TAR.GZ").forEach { option ->
-                            FilterChip(
-                                selected = format == option,
-                                onClick = {
-                                    format = option
-                                    if (option == "TAR.GZ") { password = ""; repeat = "" }
-                                },
-                                label = { Text(option) },
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                        }
-                    }
-                }
-            }
-            OutlinedTextField(
-                value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                shape = FieldShape, label = { Text(if (create) "$format file name" else "Output folder name") },
-                leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
-            )
-            if (create && encryptedFormat) {
-                PasswordField(password, { password = it }, "Password (optional)")
-                PasswordField(repeat, { repeat = it }, "Repeat password", isError = mismatch,
-                    supporting = if (mismatch) "Passwords do not match." else null)
-            } else if (create) {
-                Text(
-                    "TAR.GZ is unencrypted. Choose 7Z when password protection is needed.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                ExpandableNote(
+                    summary = if (create) "The $format archive is created in the destination folder."
+                        else "Files land in a new sub-folder of the destination folder.",
+                    details = if (create && encryptedFormat && passwordEnabled) "AES-256 encryption is enabled. 7Z also encrypts file names; forgotten passwords cannot be recovered."
+                        else if (create && encryptedFormat) "Password protection is off. Turn it on above only when encryption is needed."
+                        else if (create) "TAR.GZ is a standard unencrypted tar archive compressed with gzip."
+                        else "Encrypted archives ask for their password only when needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
                 )
             }
-            ExpandableNote(
-                summary = if (create) "The $format archive is created in the destination folder."
-                    else "Files land in a new sub-folder of the destination folder.",
-                details = if (create && encryptedFormat) "A non-empty password enables AES-256. 7Z also encrypts file names; forgotten passwords cannot be recovered."
-                    else if (create) "TAR.GZ is a standard unencrypted tar archive compressed with gzip."
-                    else "Encrypted archives ask for their password only when needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
-            )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TextButton(onClick = { close() }) { Text("Cancel") }
                 Spacer(Modifier.width(8.dp))
                 Button(

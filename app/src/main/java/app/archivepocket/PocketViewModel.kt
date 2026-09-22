@@ -4,8 +4,10 @@ import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.archivepocket.core.ArchivePreview
@@ -63,6 +65,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var control: OperationControl? = null
     @Volatile private var answer: CompletableFuture<Boolean>? = null
     private var listing: Job? = null
+    private var transientSelection: Entry? = null
 
     init {
         val verify = preferences.getBoolean(VERIFY_KEY, false)
@@ -173,6 +176,62 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             finally { mutable.update { it.copy(previewing = false) } }
         }
     }
+
+    /** Copies an archive received from Android's Open-with chooser into private cache, then previews it. */
+    fun previewExternal(uri: Uri) {
+        if (state.value.busy || state.value.previewing) return
+        mutable.update { it.copy(previewing = true, archivePreview = null, archiveSource = null, message = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val entry = cacheIncomingArchive(uri)
+                transientSelection = entry
+                mutable.update { it.copy(archiveSource = entry, archivePreview = repository.preview(entry)) }
+            } catch (e: Exception) {
+                transientSelection = null
+                mutable.update { it.copy(archiveSource = null) }
+                message(safeError(e))
+            } finally {
+                mutable.update { it.copy(previewing = false) }
+            }
+        }
+    }
+
+    private fun cacheIncomingArchive(uri: Uri): Entry {
+        val app = getApplication<Application>()
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            val direct = uri.path?.let(::File) ?: throw PocketError("The selected archive path is invalid.")
+            if (!direct.isFile) throw PocketError("The selected archive is not available.")
+            return repository.entry(direct)
+        }
+
+        val resolver = app.contentResolver
+        val displayName = runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        val rawName = (displayName ?: uri.lastPathSegment ?: "Archive.zip")
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .ifBlank { "Archive.zip" }
+        val name = if (rawName.endsWith(".zip", true) || rawName.endsWith(".zipx", true) || rawName.endsWith(".jar", true)) {
+            rawName
+        } else {
+            "$rawName.zip"
+        }
+        val incoming = File(app.cacheDir, "incoming-archives")
+        if (!incoming.isDirectory && !incoming.mkdirs()) throw PocketError("Cannot create private archive cache.")
+        incoming.listFiles()?.forEach { it.deleteRecursively() }
+        val target = File(incoming, name)
+        val input = resolver.openInputStream(uri) ?: throw PocketError("Android could not open the selected archive.")
+        input.use { source -> target.outputStream().use { output -> source.copyTo(output) } }
+        if (!target.isFile || target.length() == 0L) {
+            target.delete()
+            throw PocketError("The selected archive is empty or could not be copied.")
+        }
+        return Entry(target, name, directory = false, size = target.length(), modified = target.lastModified())
+    }
+
     fun closePreview() { mutable.update { it.copy(archivePreview = null, archiveSource = null) } }
     /** Decompresses one selected member only into private cache, then hands it to Android's viewer. */
     fun openArchiveItem(path: String, password: CharArray? = null) {
@@ -208,12 +267,28 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     fun enter(entry: Entry) { if (!state.value.loading && entry.directory) load(state.value.folders + entry.file) }
     fun back() { if (!state.value.loading && state.value.folders.size > 1) load(state.value.folders.dropLast(1)) }
     fun jumpTo(index: Int) { if (!state.value.loading && index in state.value.folders.indices) load(state.value.folders.take(index + 1)) }
-    fun select(entry: Entry) { if (!state.value.busy) mutable.update { it.copy(selected = if (entry.path in it.selected) it.selected - entry.path else it.selected + entry.path) } }
+    fun select(entry: Entry) {
+        if (state.value.busy) return
+        if (state.value.entries.none { it.path == entry.path }) transientSelection = entry
+        mutable.update { it.copy(selected = if (entry.path in it.selected) it.selected - entry.path else it.selected + entry.path) }
+    }
     /** Long-press: make sure the pressed entry is part of the selection without toggling others off. */
-    fun ensureSelected(entry: Entry) { if (!state.value.busy) mutable.update { it.copy(selected = it.selected + entry.path) } }
+    fun ensureSelected(entry: Entry) {
+        if (state.value.busy) return
+        if (state.value.entries.none { it.path == entry.path }) transientSelection = entry
+        mutable.update { it.copy(selected = it.selected + entry.path) }
+    }
     fun selectAll() { mutable.update { it.copy(selected = if (it.selected.size == it.entries.size) emptySet() else it.entries.map(Entry::path).toSet()) } }
-    fun clearSelection() { mutable.update { it.copy(selected = emptySet()) } }
-    fun selected(): List<Entry> = state.value.entries.filter { it.path in state.value.selected }
+    fun clearSelection() {
+        transientSelection = null
+        mutable.update { it.copy(selected = emptySet()) }
+    }
+    fun selected(): List<Entry> {
+        val selectedPaths = state.value.selected
+        val listed = state.value.entries.filter { it.path in selectedPaths }
+        val transient = transientSelection?.takeIf { it.path in selectedPaths && listed.none { listedEntry -> listedEntry.path == it.path } }
+        return if (transient == null) listed else listed + transient
+    }
     fun clipboard(cut: Boolean) { mutable.update { it.copy(clipboard = selected(), cut = cut, selected = emptySet()) } }
     fun clearClipboard() { mutable.update { it.copy(clipboard = emptyList()) } }
     fun cancel() { control?.cancel(); answer?.complete(false) }
@@ -266,6 +341,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             catch (e: Exception) { message(safeError(e)) }
             finally {
                 password?.fill('\u0000'); control = null
+                transientSelection = null
                 OperationService.stop(app)
                 mutable.update { it.copy(busy = false, selected = emptySet(), operationTotal = 0, currentItem = "") }
                 refresh()
