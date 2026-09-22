@@ -1,29 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <!-- The artwork stays within the adaptive-icon safe zone. -->
-    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.90" android:scaleY="0.90">
-        <!-- archive lid -->
-        <path android:pathData="M31,31h46a6,6 0 0 1 6,6v5a6,6 0 0 1 -6,6h-46a6,6 0 0 1 -6,-6v-5a6,6 0 0 1 6,-6z">
-            <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="54" android:startY="31" android:endX="54" android:endY="48"><item android:offset="0" android:color="#FFFFFFFF"/><item android:offset="1" android:color="#FFE5F1FB"/></gradient></aapt:attr>
-        </path>
-        <path android:fillColor="#FFC5D9EC" android:pathData="M33,34h42a1.4,1.4 0 0 1 0,2.8h-42a1.4,1.4 0 0 1 0,-2.8z"/>
-        <!-- archive body -->
-        <path android:pathData="M29,45h50a6,6 0 0 1 6,6v25a8,8 0 0 1 -8,8h-46a8,8 0 0 1 -8,-8v-25a6,6 0 0 1 6,-6z">
-            <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="54" android:startY="45" android:endX="54" android:endY="84"><item android:offset="0" android:color="#FFFFFFFF"/><item android:offset="1" android:color="#FFDCEBFA"/></gradient></aapt:attr>
-        </path>
-        <path android:fillColor="#FFC6DAED" android:pathData="M28,48h52a0.7,0.7 0 0 1 0,1.4h-52a0.7,0.7 0 0 1 0,-1.4z"/>
-        <!-- zipper channel and teeth -->
-        <path android:fillColor="#FF173783" android:pathData="M50,45h8v27h-8z"/>
-        <path android:fillColor="#FFFFFFFF" android:pathData="M47,47h6v2.5h-6zM55,50.5h6v2.5h-6zM47,54h6v2.5h-6zM55,57.5h6v2.5h-6zM47,61h6v2.5h-6zM55,64.5h6v2.5h-6z"/>
-        <!-- blue zipper pull -->
-        <path android:pathData="M48,67h12a3.5,3.5 0 0 1 3.5,3.5v3a5,5 0 0 1 -3,4.5l-1.5,0.8v6.7a5,5 0 0 1 -10,0v-6.7l-1.5,-0.8a5,5 0 0 1 -3,-4.5v-3a3.5,3.5 0 0 1 3.5,-3.5z">
-            <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="49" android:startY="67" android:endX="60" android:endY="91"><item android:offset="0" android:color="#FF59D7FF"/><item android:offset="1" android:color="#FF1B82DF"/></gradient></aapt:attr>
-        </path>
-        <path android:fillColor="#FFEAF8FF" android:pathData="M51,70h6a1.5,1.5 0 0 1 0,3h-6a1.5,1.5 0 0 1 0,-3zM54,77a1.4,1.4 0 0 1 1.4,1.4v3h2l-3.4,3.4l-3.4,-3.4h2v-3A1.4,1.4 0 0 1 54,77z"/>
-        <!-- subtle archive handle -->
-        <path android:fillColor="#FFB7CCE1" android:pathData="M67,73h11a2,2 0 0 1 0,4h-11a2,2 0 0 1 0,-4z"/>
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- ZIP-document launcher mark. Artwork stays inside the adaptive-icon safe zone. -->
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.84" android:scaleY="0.84">
+        <!-- document and folded corner -->
+        <path android:fillColor="#FFF0F3F8" android:strokeColor="#FF19164E" android:strokeWidth="2.6"
+            android:strokeLineJoin="round" android:pathData="M28,20h39l17,17v51h-56z" />
+        <path android:fillColor="#FFDCE4EE" android:strokeColor="#FF19164E" android:strokeWidth="2.6"
+            android:strokeLineJoin="round" android:pathData="M67,20v17h17z" />
+        <!-- cyan zipper channel with indigo teeth -->
+        <path android:fillColor="#FF39D5F5" android:pathData="M50.5,27h7v39h-7z" />
+        <path android:fillColor="#FF3730A3" android:pathData="M47.5,31h13v3h-13zM47.5,38h13v3h-13zM47.5,45h13v3h-13zM47.5,52h13v3h-13zM47.5,59h13v3h-13z" />
+        <!-- bold downward extraction arrow -->
+        <path android:fillColor="#FF19164E" android:pathData="M46,61h16v9h8l-16,17l-16,-17h8z" />
+        <path android:fillColor="#FF39D5F5" android:pathData="M49.5,63h9v10h4l-8.5,9l-8.5,-9h4z" />
     </group>
 </vector>

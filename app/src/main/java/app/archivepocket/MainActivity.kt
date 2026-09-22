@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -124,22 +125,21 @@ class MainActivity : ComponentActivity() {
 }
 
 // ---------------------------------------------------------------- palette & formatting
-private val Indigo = Color(0xFF4A47C8)
-private val IndigoDeep = Color(0xFF2B2870)
-private val IndigoLight = Color(0xFF7C6CF0)
-private val Amber = Color(0xFFFFB300)        // accent taken from the launcher icon's zipper slider
-private val AmberDark = Color(0xFFFF8F00)
-private val FolderBlue = Color(0xFF63B3FF)
-private val FolderBlueDark = Color(0xFF1C7BE0)
-private val NavyBright = Color(0xFF24B2E8)   // final archive-file highlight
-private val NavyMid = Color(0xFF1767C6)      // final archive-file mid blue
-private val NavyDeep = Color(0xFF17378E)     // final archive-file zipper blue
-private val NavyInk = Color(0xFF11194F)      // final archive-file shadow
-private val ZipAccent = Color(0xFF69DEFF)    // final zipper-pull highlight
-private val UpGreen = Color(0xFF34C759)
+private val Indigo = Color(0xFF4F46E5)
+private val IndigoDeep = Color(0xFF3730A3)
+private val IndigoLight = Color(0xFF6366F1)
+private val Amber = Color(0xFF39D5F5)        // cyan archive-action accent from the redesigned icon
+private val AmberDark = Color(0xFF2783DE)
+private val FolderBlue = Color(0xFF4F46E5)
+private val FolderBlueDark = Color(0xFF3730A3)
+private val NavyBright = Color(0xFF39D5F5)
+private val NavyMid = Color(0xFF2783DE)
+private val NavyDeep = Color(0xFF3730A3)
+private val NavyInk = Color(0xFF211B60)
+private val ZipAccent = Color(0xFF39D5F5)
+private val UpGreen = Color(0xFF46A171)
 
-// Brand wordmark uses the same serif italic voice as the launcher icon; the rest of the UI is a clean sans.
-private val Brand = FontFamily.Serif
+// A single clean sans-serif voice keeps file names, actions and prompts immediately readable.
 private val UiFont = FontFamily.SansSerif
 private val AppTypography = Typography(
     headlineSmall = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.Bold, fontSize = 23.sp, lineHeight = 29.sp),
@@ -155,9 +155,9 @@ private val AppTypography = Typography(
 )
 
 // One rounded language for every prompt box, card and input in the app.
-private val DialogShape = RoundedCornerShape(28.dp)
-private val FieldShape = RoundedCornerShape(16.dp)
-private val CardShape = RoundedCornerShape(20.dp)
+private val DialogShape = RoundedCornerShape(22.dp)
+private val FieldShape = RoundedCornerShape(12.dp)
+private val CardShape = RoundedCornerShape(14.dp)
 
 private fun fileSize(bytes: Long): String = when {
     bytes >= 1024L * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
@@ -311,79 +311,89 @@ private fun rememberThumbnail(file: File, modified: Long, kind: FileKind): Image
 private fun FolderGlyph(size: Dp, up: Boolean = false) {
     Canvas(Modifier.size(size)) {
         val w = this.size.width; val h = this.size.height
-        // Back tab, then a softly rounded body with a light sheen: reads well from 18 dp up to 96 dp.
-        drawRoundRect(FolderBlueDark, Offset(w * 0.06f, h * 0.13f), Size(w * 0.44f, h * 0.26f), CornerRadius(w * 0.1f))
-        drawRoundRect(Brush.verticalGradient(listOf(FolderBlue, FolderBlueDark)), Offset(w * 0.03f, h * 0.25f), Size(w * 0.94f, h * 0.6f), CornerRadius(w * 0.16f))
-        drawRoundRect(Color.White.copy(alpha = 0.26f), Offset(w * 0.11f, h * 0.31f), Size(w * 0.78f, h * 0.13f), CornerRadius(w * 0.07f))
+        // Flat, high-contrast folder geometry shared with the launcher and file-type system.
+        drawRoundRect(IndigoDeep, Offset(w * 0.06f, h * 0.14f), Size(w * 0.43f, h * 0.24f), CornerRadius(w * 0.08f))
+        drawRoundRect(Indigo, Offset(w * 0.03f, h * 0.27f), Size(w * 0.94f, h * 0.58f), CornerRadius(w * 0.13f))
+        drawRoundRect(Color.White.copy(alpha = 0.16f), Offset(w * 0.10f, h * 0.32f), Size(w * 0.80f, h * 0.08f), CornerRadius(w * 0.04f))
         if (up) {
-            val center = Offset(w * 0.73f, h * 0.64f); val radius = w * 0.21f
+            val center = Offset(w * 0.74f, h * 0.66f); val radius = w * 0.20f
             drawCircle(Color.White, radius, center)
-            val stroke = w * 0.085f
-            drawLine(UpGreen, Offset(center.x, center.y + radius * 0.5f), Offset(center.x, center.y - radius * 0.52f), stroke, StrokeCap.Round)
-            drawLine(UpGreen, Offset(center.x - radius * 0.44f, center.y - radius * 0.06f), Offset(center.x, center.y - radius * 0.54f), stroke, StrokeCap.Round)
-            drawLine(UpGreen, Offset(center.x + radius * 0.44f, center.y - radius * 0.06f), Offset(center.x, center.y - radius * 0.54f), stroke, StrokeCap.Round)
+            val stroke = w * 0.075f
+            drawLine(UpGreen, Offset(center.x, center.y + radius * 0.48f), Offset(center.x, center.y - radius * 0.48f), stroke, StrokeCap.Round)
+            drawLine(UpGreen, Offset(center.x - radius * 0.42f, center.y - radius * 0.04f), Offset(center.x, center.y - radius * 0.50f), stroke, StrokeCap.Round)
+            drawLine(UpGreen, Offset(center.x + radius * 0.42f, center.y - radius * 0.04f), Offset(center.x, center.y - radius * 0.50f), stroke, StrokeCap.Round)
         }
     }
 }
 
-/** Final archive-file glyph: folded blue document, white zipper, cyan extraction pull. */
+/** Flat archive-document glyph matching the redesigned adaptive launcher icon. */
 @Composable
 private fun ArchiveGlyph(size: Dp) {
     Canvas(Modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
+        val w = this.size.width; val h = this.size.height
         fun x(v: Float) = w * v
         fun y(v: Float) = h * v
         val file = Path().apply {
-            moveTo(x(0.14f), y(0.04f)); lineTo(x(0.66f), y(0.04f)); lineTo(x(0.92f), y(0.30f))
-            lineTo(x(0.92f), y(0.88f)); quadraticTo(x(0.92f), y(0.96f), x(0.84f), y(0.96f))
-            lineTo(x(0.14f), y(0.96f)); quadraticTo(x(0.06f), y(0.96f), x(0.06f), y(0.88f))
-            lineTo(x(0.06f), y(0.14f)); quadraticTo(x(0.06f), y(0.04f), x(0.14f), y(0.04f)); close()
+            moveTo(x(0.16f), y(0.04f)); lineTo(x(0.66f), y(0.04f)); lineTo(x(0.92f), y(0.30f))
+            lineTo(x(0.92f), y(0.90f)); quadraticTo(x(0.92f), y(0.96f), x(0.84f), y(0.96f))
+            lineTo(x(0.16f), y(0.96f)); quadraticTo(x(0.08f), y(0.96f), x(0.08f), y(0.88f))
+            lineTo(x(0.08f), y(0.13f)); quadraticTo(x(0.08f), y(0.04f), x(0.16f), y(0.04f)); close()
         }
-        drawPath(file, Brush.linearGradient(listOf(NavyBright, NavyMid, NavyDeep, NavyInk)))
+        drawPath(file, Color(0xFFE7ECF2))
+        drawPath(file, NavyInk, style = Stroke(width = w * 0.055f))
         val fold = Path().apply {
-            moveTo(x(0.66f), y(0.04f)); lineTo(x(0.66f), y(0.22f)); quadraticTo(x(0.66f), y(0.30f), x(0.74f), y(0.30f))
-            lineTo(x(0.92f), y(0.30f)); close()
+            moveTo(x(0.66f), y(0.04f)); lineTo(x(0.66f), y(0.30f)); lineTo(x(0.92f), y(0.30f)); close()
         }
-        drawPath(fold, Brush.linearGradient(listOf(Color(0xFFA7E9FF), Color(0xFF4CB7ED))))
-        drawRoundRect(NavyInk, Offset(x(0.445f), y(0.04f)), Size(x(0.11f), y(0.61f)), CornerRadius(w * 0.02f))
-        var toothY = 0.10f
-        var left = true
-        repeat(8) {
-            val toothX = if (left) 0.395f else 0.50f
-            drawRoundRect(Color.White, Offset(x(toothX), y(toothY)), Size(x(0.105f), y(0.037f)), CornerRadius(w * 0.012f))
-            toothY += 0.067f; left = !left
+        drawPath(fold, Color(0xFFD8E1EC))
+        drawPath(fold, NavyInk, style = Stroke(width = w * 0.045f))
+        drawRoundRect(ZipAccent, Offset(x(0.455f), y(0.12f)), Size(x(0.09f), y(0.54f)), CornerRadius(w * 0.035f))
+        var toothY = 0.18f
+        repeat(5) {
+            drawRoundRect(NavyDeep, Offset(x(0.425f), y(toothY)), Size(x(0.15f), y(0.032f)), CornerRadius(w * 0.01f))
+            toothY += 0.085f
         }
-        drawRoundRect(
-            Brush.linearGradient(listOf(ZipAccent, Color(0xFF2A91E4))),
-            Offset(x(0.365f), y(0.58f)), Size(x(0.27f), y(0.22f)), CornerRadius(w * 0.07f)
-        )
-        drawRoundRect(Color(0xFFEFFBFF), Offset(x(0.445f), y(0.625f)), Size(x(0.11f), y(0.05f)), CornerRadius(w * 0.02f))
+        val arrowOutline = Path().apply {
+            moveTo(x(0.38f), y(0.60f)); lineTo(x(0.62f), y(0.60f)); lineTo(x(0.62f), y(0.72f))
+            lineTo(x(0.72f), y(0.72f)); lineTo(x(0.50f), y(0.91f)); lineTo(x(0.28f), y(0.72f))
+            lineTo(x(0.38f), y(0.72f)); close()
+        }
+        drawPath(arrowOutline, NavyInk)
         val arrow = Path().apply {
-            moveTo(x(0.47f), y(0.72f)); lineTo(x(0.53f), y(0.72f)); lineTo(x(0.53f), y(0.79f))
-            lineTo(x(0.60f), y(0.79f)); lineTo(x(0.50f), y(0.89f)); lineTo(x(0.40f), y(0.79f))
-            lineTo(x(0.47f), y(0.79f)); close()
+            moveTo(x(0.42f), y(0.62f)); lineTo(x(0.58f), y(0.62f)); lineTo(x(0.58f), y(0.76f))
+            lineTo(x(0.64f), y(0.76f)); lineTo(x(0.50f), y(0.87f)); lineTo(x(0.36f), y(0.76f))
+            lineTo(x(0.42f), y(0.76f)); close()
         }
-        drawPath(arrow, Color(0xFFEFFBFF))
+        drawPath(arrow, ZipAccent)
     }
 }
 
-/** A rounded colour tile carrying the file-type label (PDF, DOC, APK, ...). */
+/** A coordinated folded-document tile carrying the file-type label (PDF, DOC, APK, ...). */
 @Composable
 private fun TypeBadge(kind: FileKind, size: Dp) {
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val w = this.size.width; val h = this.size.height
-            drawRoundRect(Brush.verticalGradient(listOf(kind.color, kind.color.copy(alpha = 0.72f))),
-                Offset(w * 0.05f, h * 0.05f), Size(w * 0.9f, h * 0.9f), CornerRadius(w * 0.26f))
-            drawRoundRect(Color.White.copy(alpha = 0.22f), Offset(w * 0.13f, h * 0.12f), Size(w * 0.74f, h * 0.22f), CornerRadius(w * 0.11f))
+            val page = Path().apply {
+                moveTo(w * 0.14f, h * 0.05f); lineTo(w * 0.66f, h * 0.05f); lineTo(w * 0.91f, h * 0.30f)
+                lineTo(w * 0.91f, h * 0.92f); lineTo(w * 0.14f, h * 0.92f); close()
+            }
+            drawPath(page, Color(0xFFE7ECF2))
+            drawPath(page, NavyInk, style = Stroke(width = w * 0.055f))
+            val fold = Path().apply {
+                moveTo(w * 0.66f, h * 0.05f); lineTo(w * 0.66f, h * 0.30f); lineTo(w * 0.91f, h * 0.30f); close()
+            }
+            drawPath(fold, Color(0xFFD8E1EC))
+            drawRoundRect(kind.color, Offset(w * 0.10f, h * 0.66f), Size(w * 0.85f, h * 0.27f), CornerRadius(w * 0.06f))
             if (kind == FileKind.AUDIO) {
-                drawCircle(Color.White.copy(alpha = 0.95f), w * 0.07f, Offset(w * 0.42f, h * 0.42f))
-                drawLine(Color.White.copy(alpha = 0.95f), Offset(w * 0.48f, h * 0.42f), Offset(w * 0.48f, h * 0.2f), w * 0.045f, StrokeCap.Round)
+                drawLine(NavyDeep, Offset(w * 0.38f, h * 0.34f), Offset(w * 0.38f, h * 0.54f), w * 0.05f, StrokeCap.Round)
+                drawLine(NavyDeep, Offset(w * 0.50f, h * 0.26f), Offset(w * 0.50f, h * 0.58f), w * 0.05f, StrokeCap.Round)
+                drawLine(NavyDeep, Offset(w * 0.62f, h * 0.36f), Offset(w * 0.62f, h * 0.52f), w * 0.05f, StrokeCap.Round)
             }
         }
-        Text(kind.label, Modifier.offset(y = size * 0.17f), color = Color.White, fontWeight = FontWeight.Bold,
-            fontSize = if (kind.label.length > 3) 9.sp else 11.sp, letterSpacing = 0.4.sp, maxLines = 1)
+        Text(
+            kind.label, Modifier.offset(y = size * 0.26f), color = Color.White, fontWeight = FontWeight.Bold,
+            fontSize = if (kind.label.length > 3) 8.sp else 10.sp, letterSpacing = 0.3.sp, maxLines = 1
+        )
     }
 }
 
@@ -479,7 +489,7 @@ private fun SelectionAction(label: String, enabled: Boolean, modifier: Modifier,
         else if (enabled) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).clickable(enabled = enabled, onClick = onClick)
+        modifier.clip(CardShape).clickable(enabled = enabled, onClick = onClick)
             .heightIn(min = 56.dp).padding(vertical = 8.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
@@ -522,15 +532,17 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
     var theme by rememberSaveable { mutableStateOf(0) }
     val dark = when (theme) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     val scheme = if (dark) darkColorScheme(
-        primary = Color(0xFFB3AEFF), onPrimary = Color(0xFF1B1840), secondary = Amber, tertiary = Color(0xFF7FD4C1),
-        background = Color(0xFF0E1015), surface = Color(0xFF0E1015), onSurface = Color(0xFFECEBF6),
-        surfaceVariant = Color(0xFF1A1D28), onSurfaceVariant = Color(0xFFB6B9CC),
-        secondaryContainer = Color(0xFF262A46), onSecondaryContainer = Color(0xFFE2E4FF), outlineVariant = Color(0xFF2C3040)
+        primary = Color(0xFF8CB9F4), onPrimary = Color(0xFF102033), secondary = Color(0xFF59D7F5),
+        tertiary = Color(0xFF72BC8F), background = Color(0xFF111315), surface = Color(0xFF17191C),
+        onSurface = Color(0xFFF4F5F7), surfaceVariant = Color(0xFF202327), onSurfaceVariant = Color(0xFFB6BDC8),
+        secondaryContainer = Color(0xFF292E36), onSecondaryContainer = Color(0xFFE7EBF2),
+        outline = Color(0xFF626A76), outlineVariant = Color(0xFF343941)
     ) else lightColorScheme(
-        primary = Indigo, onPrimary = Color.White, secondary = Color(0xFFB07400), tertiary = Color(0xFF00897B),
-        background = Color(0xFFF5F5FC), surface = Color(0xFFF5F5FC), onSurface = Color(0xFF1A1B2A),
-        surfaceVariant = Color.White, onSurfaceVariant = Color(0xFF5A5D75),
-        secondaryContainer = Color(0xFFE6E6FF), onSecondaryContainer = IndigoDeep, outlineVariant = Color(0xFFDCDCEC)
+        primary = Indigo, onPrimary = Color.White, secondary = Color(0xFF2783DE), tertiary = Color(0xFF2A8F76),
+        background = Color(0xFFF8F7FA), surface = Color(0xFFF8F7FA), onSurface = Color(0xFF22222A),
+        surfaceVariant = Color.White, onSurfaceVariant = Color(0xFF686875),
+        secondaryContainer = Color(0xFFECEBFF), onSecondaryContainer = IndigoDeep,
+        outline = Color(0xFF8A8996), outlineVariant = Color(0xFFE3E1E8)
     )
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -618,10 +630,10 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
         Column(Modifier.fillMaxSize().background(scheme.background)) {
             // ---- Top toolbar: browse mode / selection mode ----
             Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                    .background(Brush.linearGradient(if (selecting) listOf(IndigoDeep, Indigo) else listOf(IndigoDeep, Indigo, IndigoLight)))
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+                    .background(if (selecting) IndigoDeep else MaterialTheme.colorScheme.primary)
             ) {
-                Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 60.dp).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
                         IconButton(onClick = model::clearSelection) { Icon(Icons.Filled.Close, "Clear selection", tint = Color.White) }
                         Column(Modifier.weight(1f)) {
@@ -645,8 +657,8 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             }
                         }
                         Column(Modifier.weight(1f)) {
-                            Text("Alal Zip", color = Color.White, fontFamily = Brand, fontStyle = FontStyle.Italic,
-                                fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text("Alal Zip", color = Color.White, style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold, maxLines = 1)
                             Text(if (atRoot || !hasFolder) "Internal storage" else state.folders.last().name, color = Color.White.copy(alpha = 0.82f),
                                 style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -684,13 +696,13 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
             // ---- Content ----
             Column(Modifier.weight(1f).fillMaxWidth()) {
                 if (searching) OutlinedTextField(
-                    value = query, onValueChange = { query = it }, placeholder = { Text("Search this folder") }, shape = RoundedCornerShape(26.dp),
+                    value = query, onValueChange = { query = it }, placeholder = { Text("Search this folder") }, shape = FieldShape,
                     singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), enabled = enabled,
                     leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant)
                 )
-                if (state.clipboard.isNotEmpty()) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(18.dp),
+                if (state.clipboard.isNotEmpty()) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = CardShape,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
                     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${if (state.cut) "Move" else "Copy"} ${state.clipboard.size} item(s): open the destination folder, then Paste.",
@@ -699,7 +711,7 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                         TextButton(onClick = model::clearClipboard) { Text("Clear") }
                     }
                 }
-                if (state.busy) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(18.dp),
+                if (state.busy) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = CardShape,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
                     Column(Modifier.padding(14.dp)) {
                         val share = if (state.operationTotal > 0) (state.progress.toFloat() / state.operationTotal).coerceIn(0f, 1f) else null
@@ -740,15 +752,17 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                                 " Nothing leaves your device: the app has no internet permission.",
                             Modifier.padding(vertical = 16.dp), textAlign = TextAlign.Center
                         )
-                        Button(onClick = requestAccess, shape = RoundedCornerShape(18.dp), contentPadding = PaddingValues(horizontal = 26.dp, vertical = 14.dp)) {
+                        Button(onClick = requestAccess, shape = CardShape, contentPadding = PaddingValues(horizontal = 26.dp, vertical = 14.dp)) {
                             Text("Allow storage access", fontWeight = FontWeight.SemiBold)
                         }
                     }
                 } else {
                     // ---- Storage / navigation header card ----
-                    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clickable(enabled = enabled && !atRoot) { model.back() },
-                        shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)) {
+                    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CardShape)
+                        .clickable(enabled = enabled && !atRoot) { model.back() },
+                        shape = CardShape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
                         Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             FolderGlyph(40.dp, up = !atRoot)
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -781,10 +795,10 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             val interaction = remember { MutableInteractionSource() }
                             Box {
                                 Column(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                                    Modifier.fillMaxWidth().clip(CardShape)
                                         .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
                                         .border(if (checked) 1.5.dp else 1.dp,
-                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
+                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CardShape)
                                         .entryGestures(enabled, state.selected, interaction, haptics, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
                                         .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
@@ -807,10 +821,10 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
                             val interaction = remember { MutableInteractionSource() }
                             Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 3.dp)) {
                                 Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                                    Modifier.fillMaxWidth().clip(CardShape)
                                         .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
                                         .border(if (checked) 1.5.dp else 1.dp,
-                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
+                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CardShape)
                                         .entryGestures(enabled, state.selected, interaction, haptics, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
                                         .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -846,20 +860,21 @@ fun PocketApp(model: PocketViewModel = viewModel()) {
 
             // ---- Bottom breadcrumb path bar ----
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .background(Brush.horizontalGradient(listOf(IndigoDeep, Indigo)))
-                    .navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 11.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    .navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (state.folders.isEmpty()) Text(model.root.path, color = Color.White, fontSize = 15.sp, maxLines = 1)
+                if (state.folders.isEmpty()) Text(model.root.path, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1)
                 state.folders.forEachIndexed { index, folder ->
                     val last = index == state.folders.lastIndex
-                    if (index > 0) Icon(Icons.Filled.KeyboardArrowRight, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                    if (index > 0) Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     Text(
                         if (index == 0) "Internal storage" else folder.name,
                         Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled && !last) { model.jumpTo(index) }
-                            .background(if (last) Color.White.copy(alpha = 0.22f) else Color.Transparent).padding(horizontal = 10.dp, vertical = 4.dp),
-                        color = if (last) Color.White else Color.White.copy(alpha = 0.8f), fontSize = 15.sp, maxLines = 1,
+                            .background(if (last) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent).padding(horizontal = 10.dp, vertical = 5.dp),
+                        color = if (last) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1,
                         fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
@@ -1066,9 +1081,9 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                        .background(Brush.linearGradient(listOf(IndigoDeep, Indigo, IndigoLight)))
-                        .statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .statusBarsPadding().heightIn(min = 60.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::goBack, enabled = !busy) { Icon(Icons.Filled.Close, "Close archive", tint = Color.White) }
@@ -1079,12 +1094,12 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
                     ArchiveIcon(extract = true, enabled = !busy, description = "Extract all") { extractAll() }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), shape = RoundedCornerShape(26.dp),
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), shape = FieldShape,
                     singleLine = true, placeholder = { Text("Search this archive folder") }, enabled = !busy,
                     leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.secondaryContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 9.dp),
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clip(FieldShape).background(MaterialTheme.colorScheme.secondaryContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     ArchiveGlyph(18.dp)
                     Text("  " + preview.archiveName + "/" + folder, maxLines = 1, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
@@ -1162,11 +1177,15 @@ private fun PocketDialog(
         onDismissRequest = onDismiss,
         shape = DialogShape,
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 2.dp,
+        tonalElevation = 0.dp,
         title = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (glyph != null) {
-                    glyph()
+                    Box(
+                        Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) { glyph() }
                     Spacer(Modifier.width(12.dp))
                 }
                 Column(Modifier.weight(1f)) {
@@ -1181,7 +1200,7 @@ private fun PocketDialog(
         },
         confirmButton = {
             Button(
-                onClick = onConfirm, enabled = confirmEnabled, shape = RoundedCornerShape(16.dp),
+                onClick = onConfirm, enabled = confirmEnabled, shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
                 colors = if (destructive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
                     else ButtonDefaults.buttonColors()
@@ -1196,7 +1215,8 @@ private fun PocketDialog(
 private fun DestinationRow(folder: File, root: File, onChange: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(CardShape).background(MaterialTheme.colorScheme.secondaryContainer)
-            .clickable(onClick = onChange).padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CardShape)
+            .clickable(onClick = onChange).padding(start = 12.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         FolderGlyph(26.dp)
@@ -1283,6 +1303,7 @@ private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, subm
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: List<File>, initialName: String,
                           dismiss: () -> Unit, submit: (String, CharArray?, File) -> Unit) {
@@ -1297,60 +1318,109 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
     val mismatch = create && encryptedFormat && repeat.isNotEmpty() && password != repeat
     val valid = name.isNotBlank() && (!create || !encryptedFormat || password == repeat)
     fun close() { password = ""; repeat = ""; dismiss() }
+    fun complete() {
+        val chars = if (create && encryptedFormat) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
+        val suffix = when (format) { "7Z" -> ".7z"; "TAR.GZ" -> ".tar.gz"; else -> ".zip" }
+        val finalName = if (!create || name.endsWith(suffix, true) || (format == "TAR.GZ" && name.endsWith(".tgz", true))) {
+            name
+        } else {
+            name.substringBeforeLast('.', name) + suffix
+        }
+        password = ""; repeat = ""
+        submit(finalName, chars, destination)
+    }
     if (picking) {
         FolderPickerDialog(start = destination, root = root, recent = recent, dismiss = { picking = false }) { chosen ->
             destination = chosen; picking = false
         }
         return
     }
-    PocketDialog(
-        title = if (create) "Create ZIP" else "Extract ZIP / RAR",
-        subtitle = if (create) "New archive" else "Unpack into a new sub-folder",
-        onDismiss = { close() },
-        confirmLabel = if (create) "Create" else "Extract",
-        confirmEnabled = valid,
-        onConfirm = {
-            val chars = if (create && encryptedFormat) password.takeIf { it.isNotEmpty() }?.toCharArray() else null
-            val suffix = when (format) { "7Z" -> ".7z"; "TAR.GZ" -> ".tar.gz"; else -> ".zip" }
-            val finalName = if (!create || name.endsWith(suffix, true) || (format == "TAR.GZ" && name.endsWith(".tgz", true))) name else name.substringBeforeLast('.', name) + suffix
-            password = ""; repeat = ""
-            submit(finalName, chars, destination)
-        },
-        onDismissClick = { close() },
-        glyph = { ArchiveGlyph(36.dp) }
+    ModalBottomSheet(
+        onDismissRequest = { close() },
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                Modifier.padding(top = 10.dp, bottom = 8.dp).size(width = 40.dp, height = 4.dp)
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), CircleShape)
+            )
+        }
     ) {
-        DestinationRow(destination, root) { picking = true }
-        if (create) {
-            Text("Archive format", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("ZIP", "7Z", "TAR.GZ").forEach { option ->
-                    FilterChip(selected = format == option, onClick = {
-                        format = option
-                        if (option == "TAR.GZ") { password = ""; repeat = "" }
-                    }, label = { Text(option) })
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) { ArchiveGlyph(32.dp) }
+                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                    Text(if (create) "Create archive" else "Extract archive", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (create) "ZIP, 7Z or TAR.GZ" else "Unpack into a new sub-folder",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
+            DestinationRow(destination, root) { picking = true }
+            if (create) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Archive format", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("ZIP", "7Z", "TAR.GZ").forEach { option ->
+                            FilterChip(
+                                selected = format == option,
+                                onClick = {
+                                    format = option
+                                    if (option == "TAR.GZ") { password = ""; repeat = "" }
+                                },
+                                label = { Text(option) },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                shape = FieldShape, label = { Text(if (create) "$format file name" else "Output folder name") },
+                leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
+            )
+            if (create && encryptedFormat) {
+                PasswordField(password, { password = it }, "Password (optional)")
+                PasswordField(repeat, { repeat = it }, "Repeat password", isError = mismatch,
+                    supporting = if (mismatch) "Passwords do not match." else null)
+            } else if (create) {
+                Text(
+                    "TAR.GZ is unencrypted. Choose 7Z when password protection is needed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            ExpandableNote(
+                summary = if (create) "The $format archive is created in the destination folder."
+                    else "Files land in a new sub-folder of the destination folder.",
+                details = if (create && encryptedFormat) "A non-empty password enables AES-256. 7Z also encrypts file names; forgotten passwords cannot be recovered."
+                    else if (create) "TAR.GZ is a standard unencrypted tar archive compressed with gzip."
+                    else "Encrypted archives ask for their password only when needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { close() }) { Text("Cancel") }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = ::complete,
+                    enabled = valid,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                ) { Text(if (create) "Create" else "Extract") }
+            }
         }
-        OutlinedTextField(
-            value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = FieldShape,
-            label = { Text(if (create) "$format file name" else "Output folder name") },
-            leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
-        )
-        if (create && encryptedFormat) {
-            PasswordField(password, { password = it }, "Password (optional)")
-            PasswordField(repeat, { repeat = it }, "Repeat password", isError = mismatch,
-                supporting = if (mismatch) "Passwords do not match." else null)
-        } else if (create) {
-            Text("TAR.GZ has no standard password encryption. Choose 7Z for password protection.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        ExpandableNote(
-            summary = if (create) "The $format archive is created in the destination folder."
-                else "Files land in a new sub-folder of the destination folder.",
-            details = if (create && encryptedFormat) "A non-empty password enables AES-256. 7z also encrypts file names; forgotten passwords cannot be recovered."
-                else if (create) "TAR.GZ is a standard unencrypted tar archive compressed with gzip."
-                else "Encrypted archives ask for their password only when it is needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
-        )
     }
 }
 
