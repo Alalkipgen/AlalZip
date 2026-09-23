@@ -1400,8 +1400,13 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
         }
         return
     }
+    // Material3 opens a modal sheet at half height whenever its content is tall, which left the
+    // Create/Extract action bar below the fold until the sheet was dragged up. Skip that state so
+    // the sheet is fully expanded on the first frame.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = { close() },
+        sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 0.dp,
@@ -1413,14 +1418,15 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
         }
     ) {
         val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-        // A bounded, explicit viewport keeps the action bar visible while only the form scrolls.
-        val sheetHeight = minOf(screenHeight * 0.86f, if (create) 620.dp else 520.dp)
         Column(
-            Modifier.fillMaxWidth().height(sheetHeight).imePadding()
+            // Cap the height instead of fixing it: a short form keeps the sheet compact, a tall one
+            // scrolls inside, and in both cases the action bar stays the last row on screen.
+            Modifier.fillMaxWidth().heightIn(max = screenHeight * 0.92f)
+                .navigationBarsPadding().imePadding()
         ) {
             Column(
-                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+                Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1514,31 +1520,39 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
                         else "Encrypted archives ask for their password only when needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
                 )
             }
+            // Pinned action bar: it sits outside the scrolling form, so the primary action is on
+            // screen as soon as the sheet opens.
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 tonalElevation = 2.dp,
-                shadowElevation = 2.dp
+                shadowElevation = 6.dp
             ) {
                 Column {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(
-                        Modifier.fillMaxWidth().navigationBarsPadding()
-                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 18.dp),
-                        horizontalArrangement = Arrangement.End,
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
+                        OutlinedButton(
                             onClick = { close() },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) { Text("Cancel") }
-                        Spacer(Modifier.width(8.dp))
+                            modifier = Modifier.heightIn(min = 52.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 20.dp)
+                        ) { Text("Cancel", maxLines = 1) }
                         Button(
                             onClick = ::complete,
                             enabled = valid,
-                            modifier = Modifier.widthIn(min = 128.dp).heightIn(min = 52.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-                        ) { Text(if (create) "Create" else "Extract") }
+                            contentPadding = PaddingValues(horizontal = 20.dp)
+                        ) {
+                            Text(
+                                if (create) "Create" else "Extract",
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }
