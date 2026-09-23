@@ -66,6 +66,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
@@ -75,9 +76,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -85,6 +89,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -142,20 +147,35 @@ class MainActivity : ComponentActivity() {
 private fun Intent.archiveUri(): Uri? =
     data?.takeIf { action == Intent.ACTION_VIEW }
 
-// ---------------------------------------------------------------- palette & formatting
-private val Indigo = Color(0xFF4F46E5)
-private val IndigoDeep = Color(0xFF3730A3)
-private val IndigoLight = Color(0xFF6366F1)
-private val Amber = Color(0xFF39D5F5)        // cyan archive-action accent from the redesigned icon
-private val AmberDark = Color(0xFF2783DE)
-private val FolderBlue = Color(0xFF4F46E5)
-private val FolderBlueDark = Color(0xFF3730A3)
-private val NavyBright = Color(0xFF39D5F5)
-private val NavyMid = Color(0xFF2783DE)
-private val NavyDeep = Color(0xFF3730A3)
-private val NavyInk = Color(0xFF211B60)
-private val ZipAccent = Color(0xFF39D5F5)
-private val UpGreen = Color(0xFF46A171)
+// ---------------------------------------------------------------- brand palette & formatting
+// v0.9 brand: an indigo-to-violet gradient with a cyan archive accent, shared by the launcher
+// icon, the header, the meters and every file-type glyph.
+private val Indigo = Color(0xFF4338CA)
+private val IndigoDeep = Color(0xFF312BA0)
+private val IndigoSoft = Color(0xFF7C7AF0)
+private val Violet = Color(0xFF6D28D9)
+private val VioletDeep = Color(0xFF4C1D95)
+private val Cyan = Color(0xFF22D3EE)
+private val CyanDeep = Color(0xFF0E7490)
+private val Teal = Color(0xFF14B8A6)
+private val Coral = Color(0xFFF43F5E)
+private val ShadowInk = Color(0xFF221B4F)
+private val ZipAccent = Cyan
+private val UpGreen = Color(0xFF10B981)
+
+// The header wears the brand gradient; the deeper pair marks selection mode.
+private val BrandGradient = Brush.linearGradient(listOf(Indigo, Violet))
+private val BrandGradientDeep = Brush.linearGradient(listOf(IndigoDeep, VioletDeep))
+// Meters run teal -> indigo so a nearly full disk is the only thing that ever looks alarming.
+private val MeterGradient = Brush.horizontalGradient(listOf(Teal, Indigo))
+private val MeterGradientFull = Brush.horizontalGradient(listOf(Color(0xFFFB7185), Coral))
+
+/** Shared card styling: softly raised on light themes, hairline-outlined on dark ones. */
+private fun Modifier.cardSurface(shape: Shape, container: Color, outline: Color?, dark: Boolean, elevation: Dp = 3.dp): Modifier =
+    this.shadow(if (dark) 0.dp else elevation, shape, clip = false, ambientColor = ShadowInk, spotColor = ShadowInk)
+        .clip(shape)
+        .background(container)
+        .then(if (outline != null) Modifier.border(1.dp, outline, shape) else Modifier)
 
 // A single clean sans-serif voice keeps file names, actions and prompts immediately readable.
 private val UiFont = FontFamily.SansSerif
@@ -173,9 +193,11 @@ private val AppTypography = Typography(
 )
 
 // One rounded language for every prompt box, card and input in the app.
-private val DialogShape = RoundedCornerShape(22.dp)
-private val FieldShape = RoundedCornerShape(12.dp)
-private val CardShape = RoundedCornerShape(14.dp)
+private val DialogShape = RoundedCornerShape(26.dp)
+private val FieldShape = RoundedCornerShape(14.dp)
+private val CardShape = RoundedCornerShape(18.dp)
+private val EntryShape = RoundedCornerShape(20.dp)
+private val ActionShape = RoundedCornerShape(16.dp)
 
 private fun fileSize(bytes: Long): String = when {
     bytes >= 1024L * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
@@ -206,10 +228,10 @@ private val SLIDE_EXT = setOf("ppt", "pptx", "odp")
 private val TEXT_EXT = setOf("txt", "md", "json", "xml", "html", "css", "js", "kt", "java", "py", "log")
 
 private enum class FileKind(val label: String, val color: Color) {
-    IMAGE("IMG", Color(0xFF00897B)), VIDEO("VID", Color(0xFF7C4DFF)), AUDIO("MP3", Color(0xFFD81B60)),
-    PDF("PDF", Color(0xFFE53935)), DOC("DOC", Color(0xFF1E88E5)), SHEET("XLS", Color(0xFF2E7D32)),
-    SLIDE("PPT", Color(0xFFEF6C00)), APK("APK", Color(0xFF43A047)), ARCHIVE("ZIP", Color(0xFF8D6E63)),
-    TEXT("TXT", Color(0xFF546E7A)), OTHER("FILE", Color(0xFF78909C))
+    IMAGE("IMG", Color(0xFFF59E0B)), VIDEO("VID", Color(0xFFEC4899)), AUDIO("MP3", Color(0xFFA855F7)),
+    PDF("PDF", Coral), DOC("DOC", Color(0xFF3B82F6)), SHEET("XLS", Color(0xFF22C55E)),
+    SLIDE("PPT", Color(0xFFFB923C)), APK("APK", Color(0xFF10B981)), ARCHIVE("ZIP", Cyan),
+    TEXT("TXT", Color(0xFF64748B)), OTHER("FILE", Color(0xFF94A3B8))
 }
 
 private fun extension(name: String): String = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -339,11 +361,14 @@ private fun rememberThumbnail(file: File, modified: Long, kind: FileKind): Image
 // ---------------------------------------------------------------- icons
 @Composable
 private fun FolderGlyph(size: Dp, up: Boolean = false) {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val body = if (dark) IndigoSoft else Indigo
+    val tab = if (dark) Indigo else IndigoDeep
     Canvas(Modifier.size(size)) {
         val w = this.size.width; val h = this.size.height
         // Flat, high-contrast folder geometry shared with the launcher and file-type system.
-        drawRoundRect(IndigoDeep, Offset(w * 0.06f, h * 0.14f), Size(w * 0.43f, h * 0.24f), CornerRadius(w * 0.08f))
-        drawRoundRect(Indigo, Offset(w * 0.03f, h * 0.27f), Size(w * 0.94f, h * 0.58f), CornerRadius(w * 0.13f))
+        drawRoundRect(tab, Offset(w * 0.06f, h * 0.14f), Size(w * 0.43f, h * 0.24f), CornerRadius(w * 0.08f))
+        drawRoundRect(body, Offset(w * 0.03f, h * 0.27f), Size(w * 0.94f, h * 0.58f), CornerRadius(w * 0.13f))
         drawRoundRect(Color.White.copy(alpha = 0.16f), Offset(w * 0.10f, h * 0.32f), Size(w * 0.80f, h * 0.08f), CornerRadius(w * 0.04f))
         if (up) {
             val center = Offset(w * 0.74f, h * 0.66f); val radius = w * 0.20f
@@ -356,7 +381,7 @@ private fun FolderGlyph(size: Dp, up: Boolean = false) {
     }
 }
 
-/** Flat archive-document glyph matching the redesigned adaptive launcher icon. */
+/** Glass archive-document glyph matching the Glass Zip adaptive launcher icon. */
 @Composable
 private fun ArchiveGlyph(size: Dp) {
     Canvas(Modifier.size(size)) {
@@ -369,17 +394,17 @@ private fun ArchiveGlyph(size: Dp) {
             lineTo(x(0.16f), y(0.96f)); quadraticTo(x(0.08f), y(0.96f), x(0.08f), y(0.88f))
             lineTo(x(0.08f), y(0.13f)); quadraticTo(x(0.08f), y(0.04f), x(0.16f), y(0.04f)); close()
         }
-        drawPath(file, Color(0xFFE7ECF2))
-        drawPath(file, NavyInk, style = Stroke(width = w * 0.055f))
+        drawPath(file, Cyan.copy(alpha = 0.18f))
+        drawPath(file, Cyan, style = Stroke(width = w * 0.06f))
         val fold = Path().apply {
             moveTo(x(0.66f), y(0.04f)); lineTo(x(0.66f), y(0.30f)); lineTo(x(0.92f), y(0.30f)); close()
         }
-        drawPath(fold, Color(0xFFD8E1EC))
-        drawPath(fold, NavyInk, style = Stroke(width = w * 0.045f))
+        drawPath(fold, Cyan.copy(alpha = 0.45f))
+        drawPath(fold, Cyan, style = Stroke(width = w * 0.05f))
         drawRoundRect(ZipAccent, Offset(x(0.455f), y(0.12f)), Size(x(0.09f), y(0.54f)), CornerRadius(w * 0.035f))
         var toothY = 0.18f
         repeat(5) {
-            drawRoundRect(NavyDeep, Offset(x(0.425f), y(toothY)), Size(x(0.15f), y(0.032f)), CornerRadius(w * 0.01f))
+            drawRoundRect(CyanDeep, Offset(x(0.425f), y(toothY)), Size(x(0.15f), y(0.032f)), CornerRadius(w * 0.01f))
             toothY += 0.085f
         }
         val arrowOutline = Path().apply {
@@ -387,7 +412,7 @@ private fun ArchiveGlyph(size: Dp) {
             lineTo(x(0.72f), y(0.72f)); lineTo(x(0.50f), y(0.91f)); lineTo(x(0.28f), y(0.72f))
             lineTo(x(0.38f), y(0.72f)); close()
         }
-        drawPath(arrowOutline, NavyInk)
+        drawPath(arrowOutline, CyanDeep)
         val arrow = Path().apply {
             moveTo(x(0.42f), y(0.62f)); lineTo(x(0.58f), y(0.62f)); lineTo(x(0.58f), y(0.76f))
             lineTo(x(0.64f), y(0.76f)); lineTo(x(0.50f), y(0.87f)); lineTo(x(0.36f), y(0.76f))
@@ -397,48 +422,61 @@ private fun ArchiveGlyph(size: Dp) {
     }
 }
 
-/** A coordinated folded-document tile carrying the file-type label (PDF, DOC, APK, ...). */
+/** One coordinated document mark per file type: soft fill, crisp outline and the type label. */
 @Composable
 private fun TypeBadge(kind: FileKind, size: Dp) {
+    val ink = kind.color
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val w = this.size.width; val h = this.size.height
             val page = Path().apply {
-                moveTo(w * 0.14f, h * 0.05f); lineTo(w * 0.66f, h * 0.05f); lineTo(w * 0.91f, h * 0.30f)
-                lineTo(w * 0.91f, h * 0.92f); lineTo(w * 0.14f, h * 0.92f); close()
+                moveTo(w * 0.20f, h * 0.06f); lineTo(w * 0.62f, h * 0.06f); lineTo(w * 0.84f, h * 0.28f)
+                lineTo(w * 0.84f, h * 0.94f); lineTo(w * 0.20f, h * 0.94f); close()
             }
-            drawPath(page, Color(0xFFE7ECF2))
-            drawPath(page, NavyInk, style = Stroke(width = w * 0.055f))
+            drawPath(page, ink.copy(alpha = 0.16f))
+            drawPath(page, ink, style = Stroke(width = w * 0.065f))
             val fold = Path().apply {
-                moveTo(w * 0.66f, h * 0.05f); lineTo(w * 0.66f, h * 0.30f); lineTo(w * 0.91f, h * 0.30f); close()
+                moveTo(w * 0.62f, h * 0.06f); lineTo(w * 0.62f, h * 0.28f); lineTo(w * 0.84f, h * 0.28f); close()
             }
-            drawPath(fold, Color(0xFFD8E1EC))
-            drawRoundRect(kind.color, Offset(w * 0.10f, h * 0.66f), Size(w * 0.85f, h * 0.27f), CornerRadius(w * 0.06f))
+            drawPath(fold, ink.copy(alpha = 0.5f))
             if (kind == FileKind.AUDIO) {
-                drawLine(NavyDeep, Offset(w * 0.38f, h * 0.34f), Offset(w * 0.38f, h * 0.54f), w * 0.05f, StrokeCap.Round)
-                drawLine(NavyDeep, Offset(w * 0.50f, h * 0.26f), Offset(w * 0.50f, h * 0.58f), w * 0.05f, StrokeCap.Round)
-                drawLine(NavyDeep, Offset(w * 0.62f, h * 0.36f), Offset(w * 0.62f, h * 0.52f), w * 0.05f, StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.38f, h * 0.40f), Offset(w * 0.38f, h * 0.56f), w * 0.055f, StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.52f, h * 0.34f), Offset(w * 0.52f, h * 0.62f), w * 0.055f, StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.66f, h * 0.42f), Offset(w * 0.66f, h * 0.54f), w * 0.055f, StrokeCap.Round)
             }
         }
-        Text(
-            kind.label, Modifier.offset(y = size * 0.26f), color = Color.White, fontWeight = FontWeight.Bold,
-            fontSize = if (kind.label.length > 3) 8.sp else 10.sp, letterSpacing = 0.3.sp, maxLines = 1
+        if (kind != FileKind.AUDIO) Text(
+            kind.label, Modifier.offset(y = size * 0.12f), color = ink, fontWeight = FontWeight.Bold,
+            fontSize = (size.value * (if (kind.label.length > 3) 0.17f else 0.21f)).sp,
+            letterSpacing = 0.2.sp, maxLines = 1
         )
     }
 }
 
-/** Thumbnail (image / video frame / APK icon) when available, otherwise a type-specific glyph. */
+/** Thumbnail (image / video frame / APK icon) when available, otherwise a tinted type tile. */
 @Composable
-private fun FileVisual(name: String, directory: Boolean, file: File? = null, modified: Long = 0, up: Boolean = false, size: Dp = 46.dp, radius: Dp = 10.dp) {
-    if (directory) { FolderGlyph(size, up); return }
-    val kind = fileKind(name)
-    if (kind == FileKind.ARCHIVE) { ArchiveGlyph(size); return }
-    val thumbnail = if (file != null && (kind == FileKind.IMAGE || kind == FileKind.VIDEO || kind == FileKind.APK)) rememberThumbnail(file, modified, kind) else null
-    if (thumbnail == null) { TypeBadge(kind, size); return }
-    Box(Modifier.size(size).clip(RoundedCornerShape(radius)), contentAlignment = Alignment.Center) {
-        Image(thumbnail, name, Modifier.fillMaxSize(), contentScale = if (kind == FileKind.APK) ContentScale.Fit else ContentScale.Crop)
-        if (kind == FileKind.VIDEO) Box(Modifier.size(size * 0.46f).background(Color.Black.copy(alpha = 0.55f), CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(size * 0.34f))
+private fun FileVisual(name: String, directory: Boolean, file: File? = null, modified: Long = 0, up: Boolean = false, size: Dp = 46.dp) {
+    val kind = if (directory) null else fileKind(name)
+    val tint = if (directory) Indigo else kind!!.color
+    val thumbnail = if (kind != null && file != null && (kind == FileKind.IMAGE || kind == FileKind.VIDEO || kind == FileKind.APK))
+        rememberThumbnail(file, modified, kind) else null
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val shape = RoundedCornerShape(size * 0.28f)
+    Box(
+        Modifier.size(size).clip(shape)
+            .background(if (thumbnail != null) Color.Transparent else tint.copy(alpha = if (dark) 0.24f else 0.14f)),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            thumbnail != null -> {
+                Image(thumbnail, name, Modifier.fillMaxSize(), contentScale = if (kind == FileKind.APK) ContentScale.Fit else ContentScale.Crop)
+                if (kind == FileKind.VIDEO) Box(Modifier.size(size * 0.46f).background(Color.Black.copy(alpha = 0.55f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(size * 0.34f))
+                }
+            }
+            directory -> FolderGlyph(size * 0.66f, up)
+            kind == FileKind.ARCHIVE -> ArchiveGlyph(size * 0.64f)
+            else -> TypeBadge(kind!!, size * 0.70f)
         }
     }
 }
@@ -483,7 +521,7 @@ private fun ArchiveIcon(extract: Boolean, enabled: Boolean, description: String,
     IconButton(onClick = onClick, enabled = enabled) {
         ArchiveActionGlyph(
             extract = extract, tile = Color.White.copy(alpha = if (enabled) 1f else 0.4f), inner = IndigoDeep,
-            badge = Amber.copy(alpha = if (enabled) 1f else 0.4f), description = description
+            badge = Cyan.copy(alpha = if (enabled) 1f else 0.4f), description = description
         )
     }
 }
@@ -498,10 +536,10 @@ private fun SelectionBar(canExtract: Boolean, canShare: Boolean, enabled: Boolea
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp)) {
             SelectionAction("Extract", enabled && canExtract, Modifier.weight(1f), onExtract) { tint ->
-                ArchiveActionGlyph(extract = true, tile = tint, inner = MaterialTheme.colorScheme.surfaceVariant, badge = Amber, size = 26.dp)
+                ArchiveActionGlyph(extract = true, tile = tint, inner = MaterialTheme.colorScheme.surfaceVariant, badge = Cyan, size = 26.dp)
             }
             SelectionAction("Add to ZIP", enabled, Modifier.weight(1f), onZip) { tint ->
-                ArchiveActionGlyph(extract = false, tile = tint, inner = MaterialTheme.colorScheme.surfaceVariant, badge = Amber, size = 26.dp)
+                ArchiveActionGlyph(extract = false, tile = tint, inner = MaterialTheme.colorScheme.surfaceVariant, badge = Cyan, size = 26.dp)
             }
             SelectionAction("Share", enabled && canShare, Modifier.weight(1f), onShare) { tint ->
                 Icon(Icons.Filled.Share, null, Modifier.size(24.dp), tint = tint)
@@ -530,6 +568,71 @@ private fun SelectionAction(label: String, enabled: Boolean, modifier: Modifier,
 }
 
 // ---------------------------------------------------------------- quick access
+/** Storage and progress meters use the brand gradient instead of a flat, alarming bar. */
+@Composable
+private fun GradientMeter(fraction: Float, modifier: Modifier = Modifier, full: Boolean = false) {
+    Box(modifier.height(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.outlineVariant)) {
+        Box(
+            Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight()
+                .clip(CircleShape).background(if (full) MeterGradientFull else MeterGradient)
+        )
+    }
+}
+
+/** The prompt-box primary action: wide, gradient filled, and still legible when disabled. */
+@Composable
+private fun PrimaryAction(label: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.clip(ActionShape)
+            .background(if (enabled) BrandGradient else SolidColor(MaterialTheme.colorScheme.outlineVariant))
+            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick)
+            .heightIn(min = 52.dp).padding(horizontal = 20.dp, vertical = 15.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label, style = MaterialTheme.typography.titleSmall, maxLines = 1,
+            color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** One unified track for the archive formats: clearer and easier to hit than three loose chips. */
+@Composable
+private fun FormatSegmented(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(ActionShape)
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        options.forEach { option ->
+            val active = option == selected
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                    .then(if (active) Modifier.background(BrandGradient) else Modifier)
+                    .clickable(enabled = !active, onClickLabel = option, role = Role.RadioButton) { onSelect(option) }
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    option, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                    color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** Filled inputs: calmer than outlines and easier to read inside a prompt box. */
+@Composable
+private fun filledFieldColors(): TextFieldColors = TextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.32f),
+    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.20f),
+    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+    unfocusedIndicatorColor = Color.Transparent,
+    disabledIndicatorColor = Color.Transparent
+)
+
 private val QUICK_FOLDERS = listOf(
     "Download" to Environment.DIRECTORY_DOWNLOADS, "DCIM (Camera)" to Environment.DIRECTORY_DCIM,
     "Pictures" to Environment.DIRECTORY_PICTURES, "Movies" to Environment.DIRECTORY_MOVIES,
@@ -566,17 +669,19 @@ fun PocketApp(
     var theme by rememberSaveable { mutableStateOf(0) }
     val dark = when (theme) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     val scheme = if (dark) darkColorScheme(
-        primary = Color(0xFF8CB9F4), onPrimary = Color(0xFF102033), secondary = Color(0xFF59D7F5),
-        tertiary = Color(0xFF72BC8F), background = Color(0xFF111315), surface = Color(0xFF17191C),
-        onSurface = Color(0xFFF4F5F7), surfaceVariant = Color(0xFF202327), onSurfaceVariant = Color(0xFFB6BDC8),
-        secondaryContainer = Color(0xFF292E36), onSecondaryContainer = Color(0xFFE7EBF2),
-        outline = Color(0xFF626A76), outlineVariant = Color(0xFF343941)
+        primary = Color(0xFFA5B4FC), onPrimary = Color(0xFF1E1B4B), secondary = Cyan, onSecondary = Color(0xFF042F3A),
+        tertiary = Teal, error = Color(0xFFFB7185),
+        background = Color(0xFF0D0B1A), surface = Color(0xFF0D0B1A), onSurface = Color(0xFFECEAF6),
+        surfaceVariant = Color(0xFF17142B), onSurfaceVariant = Color(0xFF9C97B8),
+        secondaryContainer = Color(0xFF221E3A), onSecondaryContainer = Color(0xFFCFCAF0),
+        outline = Color(0xFF6B6690), outlineVariant = Color(0xFF2C2747)
     ) else lightColorScheme(
-        primary = Indigo, onPrimary = Color.White, secondary = Color(0xFF2783DE), tertiary = Color(0xFF2A8F76),
-        background = Color(0xFFF8F7FA), surface = Color(0xFFF8F7FA), onSurface = Color(0xFF22222A),
-        surfaceVariant = Color.White, onSurfaceVariant = Color(0xFF686875),
-        secondaryContainer = Color(0xFFECEBFF), onSecondaryContainer = IndigoDeep,
-        outline = Color(0xFF8A8996), outlineVariant = Color(0xFFE3E1E8)
+        primary = Indigo, onPrimary = Color.White, secondary = CyanDeep, onSecondary = Color.White,
+        tertiary = Color(0xFF0F766E), error = Coral,
+        background = Color(0xFFF6F5FB), surface = Color(0xFFF6F5FB), onSurface = Color(0xFF1A1730),
+        surfaceVariant = Color.White, onSurfaceVariant = Color(0xFF6B6880),
+        secondaryContainer = Color(0xFFEEEBFE), onSecondaryContainer = IndigoDeep,
+        outline = Color(0xFF8985A3), outlineVariant = Color(0xFFE6E3F0)
     )
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -670,8 +775,8 @@ fun PocketApp(
         Column(Modifier.fillMaxSize().background(scheme.background)) {
             // ---- Top toolbar: browse mode / selection mode ----
             Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
-                    .background(if (selecting) IndigoDeep else MaterialTheme.colorScheme.primary)
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                    .background(if (selecting) BrandGradientDeep else BrandGradient)
             ) {
                 Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 60.dp).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
@@ -735,12 +840,12 @@ fun PocketApp(
 
             // ---- Content ----
             Column(Modifier.weight(1f).fillMaxWidth()) {
-                if (searching) OutlinedTextField(
+                if (searching) TextField(
                     value = query, onValueChange = { query = it }, placeholder = { Text("Search this folder") }, shape = FieldShape,
                     singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), enabled = enabled,
                     leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
-                    colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    colors = filledFieldColors()
                 )
                 if (state.clipboard.isNotEmpty()) Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = CardShape,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
@@ -798,24 +903,25 @@ fun PocketApp(
                     }
                 } else {
                     // ---- Storage / navigation header card ----
-                    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CardShape)
-                        .clickable(enabled = enabled && !atRoot) { model.back() },
-                        shape = CardShape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
-                        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            FolderGlyph(40.dp, up = !atRoot)
-                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(if (atRoot) "Internal storage" else "Up one level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                val used = (state.total - state.free).coerceAtLeast(0)
-                                val fraction = if (state.total > 0) (used.toFloat() / state.total).coerceIn(0f, 1f) else 0f
-                                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(8.dp).clip(CircleShape),
-                                    color = if (fraction > 0.9f) Color(0xFFE53935) else MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.outlineVariant)
-                                Text("${storageSize(state.free)} free of ${storageSize(state.total)}  \u00b7  $folderCount folders, $fileCount files", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            IconButton(onClick = model::refresh, enabled = enabled) { Icon(Icons.Filled.Refresh, "Refresh") }
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                            .cardSurface(CardShape, MaterialTheme.colorScheme.surfaceVariant,
+                                if (dark) MaterialTheme.colorScheme.outlineVariant else null, dark)
+                            .clickable(enabled = enabled && !atRoot) { model.back() }
+                            .padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FileVisual("", directory = true, up = !atRoot, size = 44.dp)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(if (atRoot) "Internal storage" else "Up one level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            val used = (state.total - state.free).coerceAtLeast(0)
+                            val fraction = if (state.total > 0) (used.toFloat() / state.total).coerceIn(0f, 1f) else 0f
+                            GradientMeter(fraction, Modifier.fillMaxWidth().padding(vertical = 7.dp), full = fraction > 0.9f)
+                            Text("${storageSize(state.free)} free of ${storageSize(state.total)}  \u00b7  $folderCount folders, $fileCount files",
+                                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        IconButton(onClick = model::refresh, enabled = enabled) { Icon(Icons.Filled.Refresh, "Refresh") }
                     }
 
                     if (visible.isEmpty() && !state.loading) {
@@ -835,16 +941,18 @@ fun PocketApp(
                             val interaction = remember { MutableInteractionSource() }
                             Box {
                                 Column(
-                                    Modifier.fillMaxWidth().clip(CardShape)
-                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
-                                        .border(if (checked) 1.5.dp else 1.dp,
-                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CardShape)
+                                    Modifier.fillMaxWidth()
+                                        .cardSurface(
+                                            EntryShape,
+                                            if (checked) MaterialTheme.colorScheme.primary.copy(alpha = if (dark) 0.24f else 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
+                                            if (checked) MaterialTheme.colorScheme.primary else if (dark) MaterialTheme.colorScheme.outlineVariant else null, dark
+                                        )
                                         .entryGestures(enabled, state.selected, interaction, haptics, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
                                         .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                                        FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 84.dp, radius = 12.dp)
+                                        FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 84.dp)
                                         if (checked) Box(Modifier.align(Alignment.TopEnd).size(22.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
                                             Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         }
@@ -859,12 +967,14 @@ fun PocketApp(
                         items(visible, key = { it.path }) { entry ->
                             val checked = entry.path in state.selected
                             val interaction = remember { MutableInteractionSource() }
-                            Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 3.dp)) {
+                            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                                 Row(
-                                    Modifier.fillMaxWidth().clip(CardShape)
-                                        .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)
-                                        .border(if (checked) 1.5.dp else 1.dp,
-                                            if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CardShape)
+                                    Modifier.fillMaxWidth()
+                                        .cardSurface(
+                                            EntryShape,
+                                            if (checked) MaterialTheme.colorScheme.primary.copy(alpha = if (dark) 0.24f else 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
+                                            if (checked) MaterialTheme.colorScheme.primary else if (dark) MaterialTheme.colorScheme.outlineVariant else null, dark
+                                        )
                                         .entryGestures(enabled, state.selected, interaction, haptics, { openEntry(entry) }) { model.ensureSelected(entry); contextPath = entry.path }
                                         .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -898,14 +1008,18 @@ fun PocketApp(
             )
             SnackbarHost(snackbar, Modifier.padding(horizontal = 10.dp))
 
-            // ---- Bottom breadcrumb path bar ----
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                    .navigationBarsPadding().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // ---- Floating breadcrumb path pill ----
+            Box(
+                Modifier.fillMaxWidth().navigationBarsPadding()
+                    .padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 10.dp),
+                contentAlignment = Alignment.Center
             ) {
+              Row(
+                Modifier.cardSurface(CircleShape, MaterialTheme.colorScheme.surfaceVariant,
+                        if (dark) MaterialTheme.colorScheme.outlineVariant else null, dark, elevation = 6.dp)
+                    .horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
                 if (state.folders.isEmpty()) Text(model.root.path, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1)
                 state.folders.forEachIndexed { index, folder ->
                     val last = index == state.folders.lastIndex
@@ -918,6 +1032,7 @@ fun PocketApp(
                         fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
+              }
             }
         }
 
@@ -1121,9 +1236,9 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                        .statusBarsPadding().heightIn(min = 60.dp).padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                        .background(BrandGradient)
+                        .statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::goBack, enabled = !busy) { Icon(Icons.Filled.Close, "Close archive", tint = Color.White) }
@@ -1134,11 +1249,11 @@ private fun ArchiveBrowser(preview: ArchivePreview, busy: Boolean, dismiss: () -
                     ArchiveIcon(extract = true, enabled = !busy, description = "Extract all") { extractAll() }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), shape = FieldShape,
+                TextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), shape = FieldShape,
                     singleLine = true, placeholder = { Text("Search this archive folder") }, enabled = !busy,
                     leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear search") } },
-                    colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant))
+                    colors = filledFieldColors())
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clip(FieldShape).background(MaterialTheme.colorScheme.secondaryContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     ArchiveGlyph(18.dp)
@@ -1239,12 +1354,12 @@ private fun PocketDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
         },
         confirmButton = {
-            Button(
-                onClick = onConfirm, enabled = confirmEnabled, shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
-                colors = if (destructive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
-                    else ButtonDefaults.buttonColors()
+            if (destructive) Button(
+                onClick = onConfirm, enabled = confirmEnabled, shape = ActionShape,
+                contentPadding = PaddingValues(horizontal = 22.dp, vertical = 14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
             ) { Text(confirmLabel, maxLines = 1) }
+            else PrimaryAction(confirmLabel, confirmEnabled, onClick = onConfirm)
         },
         dismissButton = secondaryButton
     )
@@ -1290,9 +1405,10 @@ private fun ExpandableNote(summary: String, details: String) {
             .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).background(BrandGradient, CircleShape))
             Text(
                 summary,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).padding(start = 10.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1338,9 +1454,9 @@ private fun ChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
 private fun PasswordField(value: String, onValueChange: (String) -> Unit, label: String, isError: Boolean = false, supporting: String? = null) {
     var visible by remember { mutableStateOf(false) }
     val helper: (@Composable () -> Unit)? = supporting?.let { text -> { Text(text) } }
-    OutlinedTextField(
+    TextField(
         value = value, onValueChange = onValueChange, singleLine = true, shape = FieldShape, isError = isError,
-        modifier = Modifier.fillMaxWidth(), label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(), label = { Text(label) }, colors = filledFieldColors(),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
         supportingText = helper,
@@ -1365,8 +1481,8 @@ private fun NameDialog(title: String, initial: String, dismiss: () -> Unit, subm
         title = title, onDismiss = dismiss, confirmLabel = "Save", confirmEnabled = name.isNotBlank(),
         onConfirm = { submit(name) }, glyph = { FolderGlyph(30.dp) }
     ) {
-        OutlinedTextField(value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(),
-            label = { Text("Name") }, singleLine = true, shape = FieldShape)
+        TextField(value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Name") }, singleLine = true, shape = FieldShape, colors = filledFieldColors())
     }
 }
 
@@ -1448,29 +1564,20 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
                 if (create) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Archive format", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("ZIP", "7Z", "TAR.GZ").forEach { option ->
-                                FilterChip(
-                                    selected = format == option,
-                                    onClick = {
-                                        name = archiveNameForFormat(name, option)
-                                        format = option
-                                        if (option == "TAR.GZ") {
-                                            passwordEnabled = false
-                                            clearPassword()
-                                        }
-                                    },
-                                    label = { Text(option) },
-                                    shape = RoundedCornerShape(10.dp)
-                                )
+                        FormatSegmented(listOf("ZIP", "7Z", "TAR.GZ"), format) { option ->
+                            name = archiveNameForFormat(name, option)
+                            format = option
+                            if (option == "TAR.GZ") {
+                                passwordEnabled = false
+                                clearPassword()
                             }
                         }
                     }
                 }
-                OutlinedTextField(
+                TextField(
                     value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                     shape = FieldShape, label = { Text(if (create) "$format file name" else "Output folder name") },
-                    leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }
+                    leadingIcon = { if (create) ArchiveGlyph(22.dp) else FolderGlyph(22.dp) }, colors = filledFieldColors()
                 )
                 if (create && encryptedFormat) {
                     Row(
@@ -1537,22 +1644,14 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
                         OutlinedButton(
                             onClick = { close() },
                             modifier = Modifier.heightIn(min = 52.dp),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = ActionShape,
                             contentPadding = PaddingValues(horizontal = 20.dp)
                         ) { Text("Cancel", maxLines = 1) }
-                        Button(
-                            onClick = ::complete,
+                        PrimaryAction(
+                            if (create) "Create" else "Extract",
                             enabled = valid,
-                            modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 20.dp)
-                        ) {
-                            Text(
-                                if (create) "Create" else "Extract",
-                                style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1
-                            )
-                        }
+                            modifier = Modifier.weight(1f)
+                        ) { complete() }
                     }
                 }
             }
