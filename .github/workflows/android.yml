@@ -3,7 +3,7 @@ name: Alal Zip APK (debug + optimized release)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, fix/build-failure-20260923]
     paths-ignore:
       - '**/*.md'
 
