@@ -1279,16 +1279,43 @@ private fun shortPath(folder: File, root: File): String {
     return "Internal storage / " + path.removePrefix(rootPath + File.separator).replace("/", " / ")
 }
 
-/** Keeps prompt boxes short: one plain line, with the small print behind a Details toggle. */
+/** Compact prompt note: the summary and disclosure share one row so primary actions stay in view. */
 @Composable
 private fun ExpandableNote(summary: String, details: String) {
     var open by remember { mutableStateOf(false) }
-    Column {
-        Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = { open = !open }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-            Text(if (open) "Hide details" else "Details", style = MaterialTheme.typography.labelLarge)
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                summary,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(
+                onClick = { open = !open },
+                modifier = Modifier.heightIn(min = 40.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            ) {
+                Text(if (open) "Less" else "Details", style = MaterialTheme.typography.labelLarge)
+            }
         }
-        if (open) Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (open) {
+            HorizontalDivider(
+                Modifier.padding(end = 6.dp, bottom = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+            )
+            Text(
+                details,
+                modifier = Modifier.padding(end = 6.dp, bottom = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -1385,14 +1412,16 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
             )
         }
     ) {
-        val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.88f
+        val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+        // A bounded, explicit viewport keeps the action bar visible while only the form scrolls.
+        val sheetHeight = minOf(screenHeight * 0.86f, if (create) 620.dp else 520.dp)
         Column(
-            Modifier.fillMaxWidth().heightIn(max = maxSheetHeight).navigationBarsPadding().imePadding()
+            Modifier.fillMaxWidth().height(sheetHeight).imePadding()
         ) {
             Column(
-                Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -1485,20 +1514,33 @@ private fun ArchiveDialog(create: Boolean, current: File, root: File, recent: Li
                         else "Encrypted archives ask for their password only when needed. Up to 2 GiB output; split volumes and RAR links are unsupported."
                 )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = 2.dp,
+                shadowElevation = 2.dp
             ) {
-                TextButton(onClick = { close() }) { Text("Cancel") }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = ::complete,
-                    enabled = valid,
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-                ) { Text(if (create) "Create" else "Extract") }
+                Column {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        Modifier.fillMaxWidth().navigationBarsPadding()
+                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 18.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { close() },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) { Text("Cancel") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = ::complete,
+                            enabled = valid,
+                            modifier = Modifier.widthIn(min = 128.dp).heightIn(min = 52.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                        ) { Text(if (create) "Create" else "Extract") }
+                    }
+                }
             }
         }
     }
