@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import json
 import re
+import sys
 import unittest
 import xml.etree.ElementTree as ET
 import zipfile
@@ -126,18 +127,18 @@ class SourceChecks(unittest.TestCase):
             self.assertEqual("adaptive-icon", icon.tag)
             for layer in ("background", "foreground"):
                 self.assertEqual("@drawable/ic_launcher_" + layer, icon.find(layer).get(android + "drawable"))
-        # v0.8 brand: indigo adaptive tile with a light ZIP document, cyan zipper and extraction arrow.
+        # v0.9 "Glass Zip": indigo -> violet tile, frosted glass sheet, cyan zipper and slider.
         background = ET.parse(res / "drawable/ic_launcher_background.xml").getroot()
         self.assertEqual("vector", background.tag)
         gradient = next(background.iter("gradient"), None)
         self.assertIsNotNone(gradient)
-        self.assertEqual(["#FF3730A3", "#FF211B60"],
+        self.assertEqual(["#FF4338CA", "#FF5B2FD4", "#FF7C3AED"],
                          [item.get(android + "color") for item in gradient.findall("item")])
         foreground = ET.parse(res / "drawable/ic_launcher_foreground.xml").getroot()
         paths = list(foreground.iter("path"))
         fills = {path.get(android + "fillColor") for path in paths}
         self.assertGreaterEqual(len(paths), 6)
-        for colour in ("#FFF0F3F8", "#FFDCE4EE", "#FF39D5F5", "#FF3730A3", "#FF19164E"):
+        for colour in ("#59FFFFFF", "#8CFFFFFF", "#A6FFFFFF", "#FF22D3EE", "#FF67E8F9", "#FF0E7490"):
             self.assertIn(colour, fills)
         monochrome = ET.parse(res / "drawable/ic_launcher_monochrome.xml").getroot()
         self.assertEqual("vector", monochrome.tag)
@@ -145,10 +146,9 @@ class SourceChecks(unittest.TestCase):
         for name in ("ic_launcher", "ic_launcher_round"):
             themed = ET.parse(res / "mipmap-anydpi-v33" / (name + ".xml")).getroot()
             self.assertEqual("@drawable/ic_launcher_monochrome", themed.find("monochrome").get(android + "drawable"))
-        try:
-            from generate_icons import CORNERS  # needs pillow; skipped when unavailable
-        except ImportError:
-            CORNERS = []
+        sys.path.insert(0, str(ROOT / "tools"))
+        from generate_icons import CORNERS  # pure stdlib: the launcher geometry itself
+        self.assertGreater(len(CORNERS), 8)
         self.assertTrue(all((x-54)**2 + (y-54)**2 < 33**2 for x, y in CORNERS))
         for density, size in (("mdpi",48),("hdpi",72),("xhdpi",96),("xxhdpi",144),("xxxhdpi",192)):
             for name in ("ic_launcher", "ic_launcher_round"):
