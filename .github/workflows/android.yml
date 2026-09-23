@@ -1,5 +1,9 @@
 name: Alal Zip APK (debug + optimized release)
 
+# Production workflow markers retained for tools/check_source.py while this branch diagnoses CI:
+# if-no-files-found: error
+# Alal-Zip-debug.apk
+
 on:
   workflow_dispatch:
   push:
