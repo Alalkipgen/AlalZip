@@ -1,13 +1,9 @@
 name: Alal Zip APK (debug + optimized release)
 
-# Production workflow markers retained for tools/check_source.py while this branch diagnoses CI:
-# if-no-files-found: error
-# Alal-Zip-debug.apk
-
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/build-failure-20260923]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
 
@@ -15,12 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  debug:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    outputs:
-      failed: ${{ steps.build.outputs.failed }}
-      summary: ${{ steps.build.outputs.summary }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7.0.1
@@ -36,61 +29,69 @@ jobs:
         with:
           accept-android-sdk-licenses: true
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-      - name: Verify wrapper and source
-        run: |
-          chmod +x ./gradlew
-          python3 tools/check_source.py
-      - name: Capture failing Gradle stage
-        id: build
+      - name: Verify wrapper, source and native tool
         shell: bash
         run: |
-          set +e
-          log="${RUNNER_TEMP}/diagnostic-build.log"
-          : > "$log"
-          stage="assembleDebug"
-          ./gradlew assembleDebug --no-daemon --stacktrace >> "$log" 2>&1
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            stage="testDebugUnitTest+lintDebug"
-            ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace >> "$log" 2>&1
-            status=$?
-          fi
-          if [ "$status" -eq 0 ]; then
-            stage="assembleRelease"
-            ./gradlew assembleRelease --no-daemon --stacktrace >> "$log" 2>&1
-            status=$?
-          fi
-          export DIAGNOSTIC_LOG="$log" DIAGNOSTIC_STAGE="$stage" DIAGNOSTIC_STATUS="$status"
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import os, re
-          path = os.environ["DIAGNOSTIC_LOG"]
-          stage = os.environ["DIAGNOSTIC_STAGE"]
-          status = int(os.environ["DIAGNOSTIC_STATUS"])
-          lines = open(path, errors="replace").read().splitlines()
-          if status == 0:
-              detail = "all Gradle stages passed"
-          else:
-              candidates = [
-                  line.strip() for line in lines
-                  if re.search(r"(^e: |\bError: |^Execution failed for task|There were failing tests|A failure occurred while executing)", line)
-              ]
-              detail = candidates[0] if candidates else next((line.strip() for line in reversed(lines) if line.strip()), "unknown failure")
-          detail = re.sub(r"/home/runner/work/[^/]+/[^/]+/", "", detail)
-          detail = re.sub(r"\s+", " ", detail).replace("%", "pct")[:170]
-          print(f"failed={'true' if status else 'false'}")
-          print(f"summary={stage}: {detail}")
-          PY
-          exit 0
-
-  result:
-    needs: diagnose
-    name: "Result — ${{ needs.diagnose.outputs.summary }}"
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Report diagnostic result
-        env:
-          FAILED: ${{ needs.diagnose.outputs.failed }}
-          SUMMARY: ${{ needs.diagnose.outputs.summary }}
+          set -euo pipefail
+          chmod +x "${GITHUB_WORKSPACE}/gradlew"
+          python3 "${GITHUB_WORKSPACE}/tools/check_source.py"
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt2" version
+          java -version
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Run JVM tests and Android lint
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
+      - name: Verify and name the actual APK
+        shell: bash
         run: |
-          echo "$SUMMARY"
-          test "$FAILED" = "false"
+          set -euo pipefail
+          apk="${GITHUB_WORKSPACE}/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
+          mkdir -p "${RUNNER_TEMP}/alal-zip-artifact"
+          cp "$apk" "${RUNNER_TEMP}/alal-zip-artifact/Alal-Zip-debug.apk"
+          sha256sum "${RUNNER_TEMP}/alal-zip-artifact/Alal-Zip-debug.apk"
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: Alal-Zip-debug
+          path: ${{ runner.temp }}/alal-zip-artifact/Alal-Zip-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Build optimized release APK (R8)
+        shell: bash
+        env:
+          ALAL_KEYSTORE_BASE64: ${{ secrets.ALAL_KEYSTORE_BASE64 }}
+          ALAL_KEYSTORE_PASSWORD: ${{ secrets.ALAL_KEYSTORE_PASSWORD }}
+          ALAL_KEY_ALIAS: ${{ secrets.ALAL_KEY_ALIAS }}
+          ALAL_KEY_PASSWORD: ${{ secrets.ALAL_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ALAL_KEYSTORE_BASE64:-}" ]; then
+            echo "$ALAL_KEYSTORE_BASE64" | base64 -d > "${RUNNER_TEMP}/alal-release.jks"
+            export ALAL_KEYSTORE_FILE="${RUNNER_TEMP}/alal-release.jks"
+            echo "Signing release with keystore from repository secrets"
+          else
+            echo "No ALAL_KEYSTORE_BASE64 secret: release APK is signed with this runner's debug key"
+          fi
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Verify and name the release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="${GITHUB_WORKSPACE}/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
+          mkdir -p "${RUNNER_TEMP}/alal-zip-release"
+          cp "$apk" "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+          ls -l "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+          sha256sum "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: Alal-Zip-release
+          path: ${{ runner.temp }}/alal-zip-release/Alal-Zip-release.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
