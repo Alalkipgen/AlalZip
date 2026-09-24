@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -196,6 +197,10 @@ private val AppTypography = Typography(
 private val DialogShape = RoundedCornerShape(26.dp)
 private val FieldShape = RoundedCornerShape(14.dp)
 private val CardShape = RoundedCornerShape(18.dp)
+/** Floating chrome: the gradient header card and the path bar share one radius. */
+private val HeaderShape = RoundedCornerShape(26.dp)
+private val ChipShape = RoundedCornerShape(14.dp)
+private val GlassShape = RoundedCornerShape(14.dp)
 private val EntryShape = RoundedCornerShape(20.dp)
 private val ActionShape = RoundedCornerShape(16.dp)
 
@@ -430,13 +435,13 @@ private fun TypeBadge(kind: FileKind, size: Dp) {
         Canvas(Modifier.fillMaxSize()) {
             val w = this.size.width; val h = this.size.height
             val page = Path().apply {
-                moveTo(w * 0.20f, h * 0.06f); lineTo(w * 0.62f, h * 0.06f); lineTo(w * 0.84f, h * 0.28f)
-                lineTo(w * 0.84f, h * 0.94f); lineTo(w * 0.20f, h * 0.94f); close()
+                moveTo(w * 0.13f, h * 0.03f); lineTo(w * 0.62f, h * 0.03f); lineTo(w * 0.89f, h * 0.29f)
+                lineTo(w * 0.89f, h * 0.97f); lineTo(w * 0.13f, h * 0.97f); close()
             }
             drawPath(page, ink.copy(alpha = 0.16f))
             drawPath(page, ink, style = Stroke(width = w * 0.065f))
             val fold = Path().apply {
-                moveTo(w * 0.62f, h * 0.06f); lineTo(w * 0.62f, h * 0.28f); lineTo(w * 0.84f, h * 0.28f); close()
+                moveTo(w * 0.62f, h * 0.03f); lineTo(w * 0.62f, h * 0.29f); lineTo(w * 0.89f, h * 0.29f); close()
             }
             drawPath(fold, ink.copy(alpha = 0.5f))
             if (kind == FileKind.AUDIO) {
@@ -455,7 +460,7 @@ private fun TypeBadge(kind: FileKind, size: Dp) {
 
 /** Thumbnail (image / video frame / APK icon) when available, otherwise a tinted type tile. */
 @Composable
-private fun FileVisual(name: String, directory: Boolean, file: File? = null, modified: Long = 0, up: Boolean = false, size: Dp = 46.dp) {
+private fun FileVisual(name: String, directory: Boolean, file: File? = null, modified: Long = 0, up: Boolean = false, size: Dp = 52.dp) {
     val kind = if (directory) null else fileKind(name)
     val tint = if (directory) Indigo else kind!!.color
     val thumbnail = if (kind != null && file != null && (kind == FileKind.IMAGE || kind == FileKind.VIDEO || kind == FileKind.APK))
@@ -474,11 +479,52 @@ private fun FileVisual(name: String, directory: Boolean, file: File? = null, mod
                     Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(size * 0.34f))
                 }
             }
-            directory -> FolderGlyph(size * 0.66f, up)
-            kind == FileKind.ARCHIVE -> ArchiveGlyph(size * 0.64f)
-            else -> TypeBadge(kind!!, size * 0.70f)
+            // Glyphs are drawn nearly edge to edge so a PDF or ZIP tile carries the same visual
+            // weight as an installed app's own icon, which is rendered at the full tile size.
+            directory -> FolderGlyph(size * 0.88f, up)
+            kind == FileKind.ARCHIVE -> ArchiveGlyph(size * 0.92f)
+            else -> TypeBadge(kind!!, size * 0.94f)
         }
     }
+}
+
+/**
+ * Toolbar action inside the gradient header. A translucent white tile reads as a real control
+ * on the gradient, which a bare white icon on a coloured block never quite did.
+ */
+@Composable
+private fun GlassButton(onClick: () -> Unit, enabled: Boolean = true, small: Boolean = false, content: @Composable () -> Unit) {
+    val side = if (small) 40.dp else 44.dp
+    Box(
+        Modifier.size(side).clip(GlassShape)
+            .background(Color.White.copy(alpha = if (enabled) 0.18f else 0.07f))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
+
+/** Round-square button at either end of the path bar (jump to root / up one level). */
+@Composable
+private fun PathChipButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    gradient: Boolean = false,
+    container: Color = Color.Transparent,
+    content: @Composable () -> Unit
+) {
+    val disabled = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+    Box(
+        Modifier.size(40.dp).clip(ChipShape)
+            .then(
+                when {
+                    !enabled -> Modifier.background(disabled)
+                    gradient -> Modifier.background(BrandGradient)
+                    else -> Modifier.background(container)
+                }
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { content() }
 }
 
 @Composable
@@ -772,25 +818,28 @@ fun PocketApp(
     }
 
     MaterialTheme(colorScheme = scheme, typography = AppTypography) {
+      CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
         Column(Modifier.fillMaxSize().background(scheme.background)) {
             // ---- Top toolbar: browse mode / selection mode ----
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            Box(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp)) {
+              Box(
+                Modifier.fillMaxWidth().clip(HeaderShape)
                     .background(if (selecting) BrandGradientDeep else BrandGradient)
-            ) {
-                Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 60.dp).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+              ) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 66.dp).padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (selecting) {
-                        IconButton(onClick = model::clearSelection) { Icon(Icons.Filled.Close, "Clear selection", tint = Color.White) }
+                        GlassButton(onClick = model::clearSelection) { Icon(Icons.Filled.Close, "Clear selection", tint = Color.White) }
                         Column(Modifier.weight(1f)) {
                             Text("${state.selected.size} selected", color = Color.White, style = MaterialTheme.typography.titleLarge)
                             Text(fileSize(selected.sumOf { it.size }) + if (selected.any { it.directory }) " + folders" else "", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(onClick = model::selectAll, enabled = enabled && state.entries.isNotEmpty()) {
+                        GlassButton(onClick = model::selectAll, enabled = enabled && state.entries.isNotEmpty(), small = true) {
                             Icon(Icons.Filled.Check, "Select all", tint = Color.White)
                         }
                     } else {
                         Box {
-                            IconButton(onClick = { quick = true }) { Icon(Icons.Filled.Menu, "Quick access", tint = Color.White) }
+                            GlassButton(onClick = { quick = true }) { Icon(Icons.Filled.Menu, "Quick access", tint = Color.White) }
                             DropdownMenu(expanded = quick, onDismissRequest = { quick = false }) {
                                 Text("Quick access", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                                 DropdownMenuItem(text = { Text("Internal storage") }, leadingIcon = { Icon(Icons.Filled.Home, null) }, enabled = enabled,
@@ -801,21 +850,22 @@ fun PocketApp(
                                 }
                             }
                         }
-                        Column(Modifier.weight(1f)) {
-                            Text("Alal Zip", color = Color.White, style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold, maxLines = 1)
-                            Text(if (atRoot || !hasFolder) "Internal storage" else state.folders.last().name, color = Color.White.copy(alpha = 0.82f),
+                        Column(Modifier.weight(1f).padding(start = 2.dp)) {
+                            Text(if (atRoot || !hasFolder) "Internal storage" else state.folders.last().name,
+                                color = Color.White, style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("$folderCount folders, $fileCount files", color = Color.White.copy(alpha = 0.80f),
                                 style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                        GlassButton(onClick = { searching = !searching; if (!searching) query = "" }, small = true) {
                             Icon(if (searching) Icons.Filled.Close else Icons.Filled.Search, if (searching) "Close search" else "Search", tint = Color.White)
                         }
-                        IconButton(onClick = { grid = !grid }) {
+                        GlassButton(onClick = { grid = !grid }, small = true) {
                             GridGlyph(grid = !grid, tint = Color.White, description = if (grid) "List view" else "Grid view")
                         }
                     }
                     Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More", tint = Color.White) }
+                        GlassButton(onClick = { menu = true }, small = true) { Icon(Icons.Filled.MoreVert, "More", tint = Color.White) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             MenuItem(if (state.selected.size == state.entries.size && state.entries.isNotEmpty()) "Select none" else "Select all", enabled && state.entries.isNotEmpty()) { menu = false; model.selectAll() }
                             MenuItem("New folder", enabled && hasFolder) { menu = false; dialog = "mkdir" }
@@ -836,6 +886,7 @@ fun PocketApp(
                         }
                     }
                 }
+              }
             }
 
             // ---- Content ----
@@ -911,9 +962,10 @@ fun PocketApp(
                             .padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FileVisual("", directory = true, up = !atRoot, size = 44.dp)
+                        FileVisual("", directory = true, up = !atRoot, size = 50.dp)
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text(if (atRoot) "Internal storage" else "Up one level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(if (atRoot) "Internal storage" else "Up one level", style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             val used = (state.total - state.free).coerceAtLeast(0)
                             val fraction = if (state.total > 0) (used.toFloat() / state.total).coerceIn(0f, 1f) else 0f
                             GradientMeter(fraction, Modifier.fillMaxWidth().padding(vertical = 7.dp), full = fraction > 0.9f)
@@ -957,8 +1009,10 @@ fun PocketApp(
                                             Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         }
                                     }
-                                    Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-                                    Text(if (entry.directory) dateText(entry.modified).substringBefore(' ') else fileSize(entry.size), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                                    Text(if (entry.directory) dateText(entry.modified).substringBefore(' ') else fileSize(entry.size),
+                                        style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 EntryMenu(entry, state.selected, state.clipboard.isNotEmpty(), enabled, contextPath == entry.path, { contextPath = null }, model, context) { dialog = it }
                             }
@@ -979,9 +1033,10 @@ fun PocketApp(
                                         .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 48.dp)
+                                    FileVisual(entry.name, entry.directory, entry.file, entry.modified, size = 54.dp)
                                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                                        Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                        Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                                         Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
                                             Text(if (entry.directory) "Folder" else fileSize(entry.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             Spacer(Modifier.weight(1f))
@@ -1008,31 +1063,46 @@ fun PocketApp(
             )
             SnackbarHost(snackbar, Modifier.padding(horizontal = 10.dp))
 
-            // ---- Floating breadcrumb path pill ----
-            Box(
+            // ---- Floating path bar: jump-to-root, scrolling crumbs, up one level ----
+            Row(
                 Modifier.fillMaxWidth().navigationBarsPadding()
-                    .padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-              Row(
-                Modifier.cardSurface(CircleShape, MaterialTheme.colorScheme.surfaceVariant,
-                        if (dark) MaterialTheme.colorScheme.outlineVariant else null, dark, elevation = 6.dp)
-                    .horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 9.dp),
+                    .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 12.dp)
+                    .cardSurface(HeaderShape, MaterialTheme.colorScheme.surfaceVariant,
+                        if (dark) MaterialTheme.colorScheme.outlineVariant else null, dark, elevation = 8.dp)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
-              ) {
-                if (state.folders.isEmpty()) Text(model.root.path, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1)
-                state.folders.forEachIndexed { index, folder ->
-                    val last = index == state.folders.lastIndex
-                    if (index > 0) Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    Text(
-                        if (index == 0) "Internal storage" else folder.name,
-                        Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled && !last) { model.jumpTo(index) }
-                            .background(if (last) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent).padding(horizontal = 10.dp, vertical = 5.dp),
-                        color = if (last) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1,
-                        fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal
-                    )
+            ) {
+                PathChipButton(
+                    onClick = { model.open(model.root) },
+                    enabled = enabled && !atRoot,
+                    container = MaterialTheme.colorScheme.primary.copy(alpha = if (dark) 0.26f else 0.14f),
+                ) { Icon(Icons.Filled.Home, "Internal storage", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp)) }
+
+                Row(
+                    Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (state.folders.isEmpty()) Text(model.root.path, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1)
+                    state.folders.forEachIndexed { index, folder ->
+                        val last = index == state.folders.lastIndex
+                        if (index > 0) Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                        if (last) Text(
+                            if (index == 0) "Internal storage" else folder.name,
+                            Modifier.clip(ChipShape).background(BrandGradient).padding(horizontal = 14.dp, vertical = 7.dp),
+                            color = Color.White, fontSize = 14.sp, maxLines = 1, fontWeight = FontWeight.Bold
+                        ) else Text(
+                            if (index == 0) "Internal storage" else folder.name,
+                            Modifier.clip(ChipShape).clickable(enabled = enabled) { model.jumpTo(index) }.padding(horizontal = 8.dp, vertical = 7.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1
+                        )
+                    }
                 }
-              }
+
+                PathChipButton(
+                    onClick = model::back,
+                    enabled = enabled && !atRoot,
+                    gradient = true,
+                ) { Icon(Icons.Filled.KeyboardArrowUp, "Up one level", tint = Color.White, modifier = Modifier.size(21.dp)) }
             }
         }
 
@@ -1155,6 +1225,7 @@ fun PocketApp(
                 )
             }
         }
+      }
     }
 }
 
