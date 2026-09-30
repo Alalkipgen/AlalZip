@@ -1,4 +1,4 @@
-name: Alal Zip APK (debug + optimized release)
+name: Archive APK (debug + optimized release)
 
 on:
   workflow_dispatch:
@@ -49,13 +49,13 @@ jobs:
           test -s "$apk"
           "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
           mkdir -p "${RUNNER_TEMP}/alal-zip-artifact"
-          cp "$apk" "${RUNNER_TEMP}/alal-zip-artifact/Alal-Zip-debug.apk"
-          sha256sum "${RUNNER_TEMP}/alal-zip-artifact/Alal-Zip-debug.apk"
+          cp "$apk" "${RUNNER_TEMP}/alal-zip-artifact/Archive-debug.apk"
+          sha256sum "${RUNNER_TEMP}/alal-zip-artifact/Archive-debug.apk"
       - name: Upload debug APK
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: Alal-Zip-debug
-          path: ${{ runner.temp }}/alal-zip-artifact/Alal-Zip-debug.apk
+          name: Archive-debug
+          path: ${{ runner.temp }}/alal-zip-artifact/Archive-debug.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -84,14 +84,14 @@ jobs:
           test -s "$apk"
           "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
           mkdir -p "${RUNNER_TEMP}/alal-zip-release"
-          cp "$apk" "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
-          ls -l "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
-          sha256sum "${RUNNER_TEMP}/alal-zip-release/Alal-Zip-release.apk"
+          cp "$apk" "${RUNNER_TEMP}/alal-zip-release/Archive-release.apk"
+          ls -l "${RUNNER_TEMP}/alal-zip-release/Archive-release.apk"
+          sha256sum "${RUNNER_TEMP}/alal-zip-release/Archive-release.apk"
       - name: Upload release APK
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: Alal-Zip-release
-          path: ${{ runner.temp }}/alal-zip-release/Alal-Zip-release.apk
+          name: Archive-release
+          path: ${{ runner.temp }}/alal-zip-release/Archive-release.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

@@ -1,12 +1,12 @@
-# Alal Zip — build and export
+# Archive — build and export
 
-The existing ArchivePocket project was renamed in place; application ID remains `app.archivepocket`. No archive/file feature was removed. Updated source: `/data/user/0/com.vscodroid/files/projects/Alal-Zip-Source.zip`. The old source archive is retained separately.
+The existing ArchivePocket project was renamed in place; application ID remains `app.archivepocket`. No archive/file feature was removed. Updated source: `/data/user/0/com.vscodroid/files/projects/Archive-Source.zip`. The old source archive is retained separately.
 
 ## GitHub alternative (prepared, not run)
 
 Manual-only workflow: `/data/user/0/com.vscodroid/files/projects/ArchivePocket/.github/workflows/android.yml`.
 Phone instructions: `/data/user/0/com.vscodroid/files/projects/ArchivePocket/docs/GITHUB_ACTIONS.md`.
-No code has been uploaded and no remote build has been triggered. CI checks AAPT2, assembles debug, runs tests/lint, checks the APK signature and uploads `Alal-Zip-debug` only if those steps succeed. SDK licenses are accepted on the hosted runner only when you choose to run it.
+No code has been uploaded and no remote build has been triggered. CI checks AAPT2, assembles debug, runs tests/lint, checks the APK signature and uploads `Archive-debug` only if those steps succeed. SDK licenses are accepted on the hosted runner only when you choose to run it.
 
 Latest local recheck: about 5.8 GB free; Java, javac, Gradle, sdkmanager, AAPT2 and adb absent from PATH and inspected locations. `bash /data/user/0/com.vscodroid/files/projects/ArchivePocket/gradlew assembleDebug --no-daemon` failed with the same missing-Java error below. Native Android build tools could not be executed because none were found. No toolchain or system configuration change was made.
 
@@ -40,7 +40,7 @@ Direct execution of the upstream wrapper first produced `/bin/sh: bad interprete
 
 ## Practical alternative: local desktop Android Studio
 
-1. Transfer `/data/user/0/com.vscodroid/files/projects/Alal-Zip-Source.zip` yourself to a desktop. No upload service is necessary. The ZIP's top directory remains ArchivePocket.
+1. Transfer `/data/user/0/com.vscodroid/files/projects/Archive-Source.zip` yourself to a desktop. No upload service is necessary. The ZIP's top directory remains ArchivePocket.
 2. Extract to an absolute directory, for example `/home/developer/ArchivePocket` (macOS: `/Users/developer/ArchivePocket`, Windows: `C:\Projects\ArchivePocket`). These are example destinations, not existing files on the phone.
 3. Install/use Android Studio with **JDK 17**, Android SDK Platform **35** and Build Tools **35.0.0**. Accept SDK licenses yourself. Allow several GB for SDK/dependencies; first sync needs internet to download dependencies. The resulting app runs offline.
 4. Open that extracted project, select JDK 17 for Gradle, and let Studio create the machine-specific `local.properties`. Do not include that file in source delivery.
@@ -65,9 +65,9 @@ Versions are pinned: AGP 8.7.3, Gradle 8.10.2, Kotlin/Compose plugin 2.0.21, Com
 
 ## Export from VSCodroid to Downloads
 
-Source output: `/data/user/0/com.vscodroid/files/projects/Alal-Zip-Source.zip`.
+Source output: `/data/user/0/com.vscodroid/files/projects/Archive-Source.zip`.
 
-App-private files are not directly readable by ordinary file-manager apps. In VSCodroid Explorer, locate `/data/user/0/com.vscodroid/files/projects/Alal-Zip-Source.zip` and use **Share/Export/Save As** if your installed version exposes such an action; choose Android's Files/Save to device and **Downloads**. Exact menu availability depends on VSCodroid version. If no export/share action is available, use VSCodroid's documented project/file export feature; do not assume another file manager can open its private directory.
+App-private files are not directly readable by ordinary file-manager apps. In VSCodroid Explorer, locate `/data/user/0/com.vscodroid/files/projects/Archive-Source.zip` and use **Share/Export/Save As** if your installed version exposes such an action; choose Android's Files/Save to device and **Downloads**. Exact menu availability depends on VSCodroid version. If no export/share action is available, use VSCodroid's documented project/file export feature; do not assume another file manager can open its private directory.
 
 If VSCodroid already has shared-storage access, this optional Python command copies without overwriting an existing Downloads file:
 
@@ -75,12 +75,12 @@ If VSCodroid already has shared-storage access, this optional Python command cop
 python3 - <<'PY'
 from pathlib import Path
 import shutil
-source = Path('/data/user/0/com.vscodroid/files/projects/Alal-Zip-Source.zip')
-destination = Path('/storage/emulated/0/Download/Alal-Zip-Source.zip')
+source = Path('/data/user/0/com.vscodroid/files/projects/Archive-Source.zip')
+destination = Path('/storage/emulated/0/Download/Archive-Source.zip')
 with source.open('rb') as input_file, destination.open('xb') as output_file:
     shutil.copyfileobj(input_file, output_file)
 print(destination)
 PY
 ```
 
-This export command was **not run**. `PermissionError` means direct shared-storage writing is not permitted; use the Android picker/export flow instead. `FileExistsError` means a file already exists: choose another name, do not delete it automatically. Conventional Downloads path: `/storage/emulated/0/Download/Alal-Zip-Source.zip`.
+This export command was **not run**. `PermissionError` means direct shared-storage writing is not permitted; use the Android picker/export flow instead. `FileExistsError` means a file already exists: choose another name, do not delete it automatically. Conventional Downloads path: `/storage/emulated/0/Download/Archive-Source.zip`.

@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
 import app.archivepocket.R
 
 /**
- * Keeps a long archive operation running while Alal Zip is in the background and shows its progress.
+ * Keeps a long archive operation running while Archive is in the background and shows its progress.
  * The work itself stays in the ViewModel; this service only owns the foreground notification and
  * forwards its Cancel action to [OperationService.cancelRequest].
  */

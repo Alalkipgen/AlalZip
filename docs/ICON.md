@@ -1,19 +1,19 @@
-# Alal Zip launcher artwork
+# Archive launcher artwork
 
-Typographic icon: white “Alal” (Liberation Serif Bold Italic) above a white interlocking zipper-teeth row with an amber (#FFB300 / #FF8F00) slider and pull tab, then small tracked “ZIP” (Liberation Sans Bold), centered on pure black. Liberation fonts are SIL Open Font License, so their glyph outlines may be embedded as vector paths. All shapes are generated rectangles and glyph outlines: no gradients, pictures or downloaded artwork.
+Text-free “Glass Zip” icon: a frosted glass document closed by a cyan zipper on an indigo-to-violet gradient. The artwork uses generated vector geometry with no wordmark, downloaded image, or third-party asset.
 
-Adaptive foreground: `app/src/main/res/drawable/ic_launcher_foreground.xml` (108dp vector, glyph outlines converted to `pathData`).
-Background: `app/src/main/res/drawable/ic_launcher_background.xml` (#000000).
-Both adaptive launcher references are in `app/src/main/res/mipmap-anydpi-v26`.
+Adaptive foreground: `app/src/main/res/drawable/ic_launcher_foreground.xml` (108dp vector).  
+Gradient background: `app/src/main/res/drawable/ic_launcher_background.xml`.  
+Android 13 monochrome layer: `app/src/main/res/drawable/ic_launcher_monochrome.xml`.
 
-Legacy normal/round resources are real 48/72/96/144/192px PNGs for mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi (square black artwork; launcher masks choose their shape). All outline corners fit inside the centered 66dp-diameter adaptive safe circle.
+Adaptive launcher references are in `app/src/main/res/mipmap-anydpi-v26`; themed-icon references are in `mipmap-anydpi-v33`. Legacy density PNGs remain for manifest compatibility.
 
-Previews (square, circle and rounded square): `docs/icon-preview.png`, `docs/icon-preview-circle.png`, `docs/icon-preview-rounded.png`.
+Previews: `docs/icon-preview.png`, `docs/icon-preview-circle.png`, `docs/icon-preview-rounded.png`.
 
-Regenerate (needs `python3 -m pip install fonttools pillow` and the Liberation fonts installed):
+Regenerate the vectors with:
 
 ```sh
 python3 tools/generate_icons.py
 ```
 
-The old unused ArchivePocket drawable is retained as historical artwork, but no longer referenced by the manifest.
+The old unused ArchivePocket drawable is retained as historical artwork but is not referenced by the manifest.

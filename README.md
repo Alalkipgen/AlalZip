@@ -1,10 +1,10 @@
-# Alal Zip
+# Archive
 
 Native Kotlin + Jetpack Compose Android archive/file manager, updated in place from ArchivePocket. Launcher branding is a text-free zipper mark — white teeth and an amber slider on the violet brand gradient — as adaptive vector layers. Existing file/archive features are preserved. No website, backend, ads, login, AI key or Internet permission; direct file-manager browsing uses Android's all-files access.
 
 Application ID and Kotlin package remain `app.archivepocket`; existing preferences and storage identifiers are unchanged. The project directory remains `/data/user/0/com.vscodroid/files/projects/ArchivePocket`.
 
-Source deliverable: `/data/user/0/com.vscodroid/files/projects/Alal-Zip-Source.zip`. Local build is blocked by the missing JDK/SDK; GitHub Actions is prepared but **has not run**. Phone upload/run/download instructions: `/data/user/0/com.vscodroid/files/projects/ArchivePocket/docs/GITHUB_ACTIONS.md`. Icon preview: `/data/user/0/com.vscodroid/files/projects/ArchivePocket/docs/icon-preview.png`.
+Source deliverable: `/data/user/0/com.vscodroid/files/projects/Archive-Source.zip`. Local build is blocked by the missing JDK/SDK; GitHub Actions is prepared but **has not run**. Phone upload/run/download instructions: `/data/user/0/com.vscodroid/files/projects/ArchivePocket/docs/GITHUB_ACTIONS.md`. Icon preview: `/data/user/0/com.vscodroid/files/projects/ArchivePocket/docs/icon-preview.png`.
 
 **Status: first-pass source implementation; not yet compiled or device-tested. No APK is included.** The authoring phone has no JDK, SDK or Gradle installation. Free space was approximately 2.2 GB initially and 5.9 GB at the final inspection. See BUILDING.md and TEST_REPORT.md for actual errors, checks and the alternative build procedure.
 

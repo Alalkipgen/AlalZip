@@ -943,8 +943,8 @@ fun PocketApp(
                         FolderGlyph(96.dp)
                         Text("Storage access needed", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
                         Text(
-                            "Alal Zip browses your phone storage directly, like a file manager. " +
-                                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "Turn on \u201cAllow access to manage all files\u201d for Alal Zip, then come back." else "Allow the storage permission to continue.") +
+                            "Archive browses your phone storage directly, like a file manager. " +
+                                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "Turn on \u201cAllow access to manage all files\u201d for Archive, then come back." else "Allow the storage permission to continue.") +
                                 " Nothing leaves your device: the app has no internet permission.",
                             Modifier.padding(vertical = 16.dp), textAlign = TextAlign.Center
                         )
@@ -1109,7 +1109,7 @@ fun PocketApp(
         // ---- Dialogs ----
         state.message?.let { text ->
             PocketDialog(
-                title = "Alal Zip", onDismiss = { model.message(null) }, confirmLabel = "OK",
+                title = "Archive", onDismiss = { model.message(null) }, confirmLabel = "OK",
                 onConfirm = { model.message(null) }, dismissLabel = null,
                 glyph = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary) }
             ) { Text(text, style = MaterialTheme.typography.bodyMedium) }
@@ -1209,7 +1209,7 @@ fun PocketApp(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             "about" -> PocketDialog(
-                title = "Alal Zip", subtitle = "Version 0.8.1  \u00b7  offline, no internet permission",
+                title = "Archive", subtitle = "Version 0.8.1  \u00b7  offline, no internet permission",
                 onDismiss = { dialog = null }, confirmLabel = "Close", onConfirm = { dialog = null }, dismissLabel = null,
                 glyph = { ArchiveGlyph(40.dp) }
             ) {

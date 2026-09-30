@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Alal Zip launcher icon "Glass Zip": a frosted glass document closed by a cyan zipper.
+"""Archive launcher icon "Glass Zip": a frosted glass document closed by a cyan zipper.
 
 Everything is geometry, so the three adaptive vectors (background, foreground and
 the Android 13 monochrome layer) come from the same numbers:

@@ -114,9 +114,9 @@ class SourceChecks(unittest.TestCase):
         for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
             self.assertEqual((ROOT / name).read_bytes(), (assets / name).read_bytes())
 
-    def test_alal_zip_branding_and_icons(self):
+    def test_archive_branding_and_icons(self):
         res = ROOT / "app/src/main/res"
-        self.assertEqual("Alal Zip", ET.parse(res / "values/strings.xml").find("string[@name='app_name']").text)
+        self.assertEqual("Archive", ET.parse(res / "values/strings.xml").find("string[@name='app_name']").text)
         app = ET.parse(ROOT / "app/src/main/AndroidManifest.xml").find("application")
         android = "{http://schemas.android.com/apk/res/android}"
         self.assertEqual("@mipmap/ic_launcher", app.get(android + "icon"))
@@ -173,7 +173,7 @@ class SourceChecks(unittest.TestCase):
     def test_ci_and_portable_build_configuration(self):
         workflow = (ROOT / ".github/workflows/android.yml").read_text()
         for marker in ("workflow_dispatch:", "contents: read", "ubuntu-24.04", "java-version: '17'",
-                       "./gradlew assembleDebug", "if-no-files-found: error", "Alal-Zip-debug.apk"):
+                       "./gradlew assembleDebug", "if-no-files-found: error", "Archive-debug.apk"):
             self.assertIn(marker, workflow)
         for name in ("gradle.properties", "settings.gradle.kts", "build.gradle.kts", "app/build.gradle.kts"):
             text = (ROOT / name).read_text()

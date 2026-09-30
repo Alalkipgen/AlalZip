@@ -1,9 +1,9 @@
 # Validation report — 2026-09-10
 
-## Alal Zip targeted update
+## Archive targeted update
 
 - Updated existing project in place: launcher label, title, About, empty-state/error branding and README. Application ID/package `app.archivepocket`, archive logic, preferences and folder path are preserved.
-- Real adaptive vector foreground + solid black background and ten legacy PNGs (five densities, normal/round) generated. Square/circle/rounded previews visually inspected. Geometry checks keep all text within the adaptive safe circle; PNG dimensions, CRC and decompression checks passed. Device launcher rendering is NOT tested.
+- Real adaptive vector foreground + solid black background and ten legacy PNGs (five densities, normal/round) generated. Square/circle/rounded previews visually inspected. Geometry checks keep the artwork within the adaptive safe circle; PNG dimensions, CRC and decompression checks passed. Device launcher rendering is NOT tested.
 - Updated offline structural suite: **10/10 passed**, including icon/branding, workflow markers and portable build configuration. Official Gradle wrapper remains complete and checksum-valid. Shell syntax check passed.
 - Local `assembleDebug` retried: **failed, exit 1**, Java missing. No JDK/SDK/Gradle/AAPT2/adb found in PATH or inspected locations; native build tools could not be executed. This failure happened before project compilation, so it reveals no Kotlin compile result. No large downloads or system changes made.
 - GitHub workflow prepared with manual triggering, read-only contents permission, Ubuntu 24.04, JDK 17, SDK/build tools 35, build/test/lint, APK signing check and artifact upload. Exact action release tags verified upstream. **No repository/upload/remote run performed; no GitHub build success claimed.**

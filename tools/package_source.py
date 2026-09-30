@@ -6,7 +6,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT.parent / "Alal-Zip-Source.zip"
+OUTPUT = ROOT.parent / "Archive-Source.zip"
 TOP = {"settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", ".gitignore",
        "README.md", "BUILDING.md", "KNOWN_LIMITATIONS.md", "THIRD_PARTY_NOTICES.md", "TEST_REPORT.md", "LICENSE"}
 TREES = {"app/src", "licenses", "tools", "docs"}
