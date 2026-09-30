@@ -66,23 +66,36 @@ jobs:
           ALAL_KEYSTORE_PASSWORD: ${{ secrets.ALAL_KEYSTORE_PASSWORD }}
           ALAL_KEY_ALIAS: ${{ secrets.ALAL_KEY_ALIAS }}
           ALAL_KEY_PASSWORD: ${{ secrets.ALAL_KEY_PASSWORD }}
+          REQUIRE_RELEASE_SIGNING: "true"
         run: |
           set -euo pipefail
-          if [ -n "${ALAL_KEYSTORE_BASE64:-}" ]; then
-            echo "$ALAL_KEYSTORE_BASE64" | base64 -d > "${RUNNER_TEMP}/alal-release.jks"
-            export ALAL_KEYSTORE_FILE="${RUNNER_TEMP}/alal-release.jks"
-            echo "Signing release with keystore from repository secrets"
-          else
-            echo "No ALAL_KEYSTORE_BASE64 secret: release APK is signed with this runner's debug key"
-          fi
+          for name in ALAL_KEYSTORE_BASE64 ALAL_KEYSTORE_PASSWORD ALAL_KEY_ALIAS ALAL_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing $name secret"
+              exit 1
+            fi
+          done
+          printf '%s' "$ALAL_KEYSTORE_BASE64" | base64 --decode > "${RUNNER_TEMP}/alal-release.jks"
+          export ALAL_KEYSTORE_FILE="${RUNNER_TEMP}/alal-release.jks"
+          echo "Signing release with the permanent Archive key"
           ./gradlew assembleRelease --no-daemon --stacktrace
       - name: Verify and name the release APK
         shell: bash
+        env:
+          EXPECTED_CERT_SHA256: "beddcc8e2e5210b47861ebe171a09e50bc5f3607b2d717c050a86de8019792c8"
         run: |
           set -euo pipefail
           apk="${GITHUB_WORKSPACE}/app/build/outputs/apk/release/app-release.apk"
           test -s "$apk"
-          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify "$apk"
+          apksigner="${ANDROID_HOME}/build-tools/35.0.0/apksigner"
+          signature_output="$("$apksigner" verify --print-certs "$apk")"
+          printf '%s\n' "$signature_output"
+          actual_cert_sha256="$(printf '%s\n' "$signature_output" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+          if [ "$actual_cert_sha256" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::Release APK was not signed by the permanent Archive key"
+            exit 1
+          fi
+          echo "Permanent release signature verified"
           mkdir -p "${RUNNER_TEMP}/alal-zip-release"
           cp "$apk" "${RUNNER_TEMP}/alal-zip-release/Archive-release.apk"
           ls -l "${RUNNER_TEMP}/alal-zip-release/Archive-release.apk"

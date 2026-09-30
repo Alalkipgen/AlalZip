@@ -3,6 +3,19 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val releaseStorePath = System.getenv("ALAL_KEYSTORE_FILE")
+val releaseStoreFile = releaseStorePath?.takeIf { it.isNotBlank() }?.let { file(it) }
+val releaseStorePassword = System.getenv("ALAL_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ALAL_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ALAL_KEY_PASSWORD")
+val hasReleaseSigning = releaseStoreFile?.exists() == true &&
+    listOf(releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+val requireReleaseSigning = System.getenv("REQUIRE_RELEASE_SIGNING") == "true"
+if (requireReleaseSigning && !hasReleaseSigning) {
+    throw GradleException("Permanent release signing credentials are required")
+}
+
 android {
     namespace = "app.archivepocket"
     compileSdk = 35
@@ -16,15 +29,13 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
-        // Optional stable release key from CI secrets / local env; falls back to the debug key so the
-        // optimized APK is always installable for sideloading.
+        // Local builds may use the debug key; CI release builds require the permanent key.
         create("release") {
-            val storePath = System.getenv("ALAL_KEYSTORE_FILE")
-            if (!storePath.isNullOrBlank() && file(storePath).exists()) {
-                storeFile = file(storePath)
-                storePassword = System.getenv("ALAL_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ALAL_KEY_ALIAS")
-                keyPassword = System.getenv("ALAL_KEY_PASSWORD")
+            if (hasReleaseSigning) {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             } else {
                 initWith(signingConfigs.getByName("debug"))
             }
