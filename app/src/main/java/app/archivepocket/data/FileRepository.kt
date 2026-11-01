@@ -82,7 +82,7 @@ class FileRepository(context: Context) {
 
     private fun open(file: File): InputStream = file.inputStream()
     fun cleanAbandoned() {
-        // Called only when the ViewModel is constructed, before operations can start.
+        // Called once per process by OperationManager, before its first operation can start.
         // "op-" folders are leftovers from the older cache-staged operations.
         tempRoot.listFiles()?.filter { it.name.startsWith("op-") }?.forEach {
             if (!it.deleteRecursively()) throw PocketError("Cannot clean previous private temporary files. Clear app cache from Android Settings.")

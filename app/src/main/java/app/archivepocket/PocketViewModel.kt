@@ -12,7 +12,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.archivepocket.core.ArchivePreview
 import app.archivepocket.core.OperationControl
-import app.archivepocket.core.OperationService
+import app.archivepocket.core.OperationManager
 import app.archivepocket.core.PasswordRequiredError
 import app.archivepocket.core.PocketError
 import app.archivepocket.data.Entry
@@ -24,10 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import java.io.File
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 /**
  * An archive operation that stopped because it needs a password (RAR-style flow: try without one first,
@@ -53,28 +51,51 @@ data class PocketState(
     val verifyLarge: Boolean = false,
     val previewing: Boolean = false, val archivePreview: ArchivePreview? = null, val archiveSource: Entry? = null,
     val fileToOpen: File? = null, val passwordRequest: PasswordRequest? = null,
-    val free: Long = 0, val total: Long = 0
+    val free: Long = 0, val total: Long = 0,
+    /** Id of the oldest finished operation whose result no screen has shown yet. */
+    val pendingOutcome: Long? = null
 )
 
 class PocketViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = FileRepository(app)
+    /** Owns the running operation for the whole app; this screen only observes it and sends commands. */
+    private val manager = OperationManager.get(app)
     private val preferences = app.getSharedPreferences("alal-zip", Context.MODE_PRIVATE)
     private val mutable = MutableStateFlow(PocketState())
     val state = mutable.asStateFlow()
     val root: File get() = repository.root
-    @Volatile private var control: OperationControl? = null
-    @Volatile private var answer: CompletableFuture<Boolean>? = null
     private var listing: Job? = null
     private var transientSelection: Entry? = null
+    /** Password prompt for the operation with this id, should it stop because the archive is encrypted. */
+    private var passwordRetry: Pair<Long, (Boolean) -> PasswordRequest>? = null
 
     init {
         val verify = preferences.getBoolean(VERIFY_KEY, false)
         repository.verifyLargeFiles = verify
         mutable.update { it.copy(recent = storedDestinations(), verifyLarge = verify) }
-        // The notification's Cancel action stops whatever operation is running.
-        OperationService.cancelRequest = { cancel() }
-        viewModelScope.launch(Dispatchers.IO) {
-            try { repository.cleanAbandoned() } catch (e: Exception) { message(safeError(e)) }
+        viewModelScope.launch {
+            var lastFinished = manager.state.value.finished
+            manager.state.collect { operation ->
+                mutable.update {
+                    it.copy(
+                        busy = operation.running, progress = operation.progress, operationTotal = operation.total,
+                        currentItem = operation.item, collision = operation.collision,
+                        operation = when {
+                            operation.cancelling -> "Cancelling\u2026"
+                            operation.item.isBlank() -> operation.label
+                            else -> "${operation.label} \u00b7 ${operation.item}"
+                        },
+                        pendingOutcome = operation.outcomes.firstOrNull()?.id
+                    )
+                }
+                // Any finished operation, started from this screen or another one, may have changed the folder shown.
+                if (operation.finished != lastFinished) {
+                    lastFinished = operation.finished
+                    transientSelection = null
+                    mutable.update { it.copy(selected = emptySet()) }
+                    refresh()
+                }
+            }
         }
         checkAccess()
     }
@@ -130,7 +151,8 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     private fun load(folders: List<File>) {
-        if (state.value.busy) return
+        // A screen opened while an operation runs still needs its first listing.
+        if (state.value.busy && state.value.folders.isNotEmpty()) return
         listing?.cancel()
         mutable.update { it.copy(loading = true, selected = emptySet()) }
         listing = viewModelScope.launch(Dispatchers.IO) {
@@ -179,7 +201,8 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Copies an archive received from Android's Open-with chooser into private cache, then previews it. */
     fun previewExternal(uri: Uri) {
-        if (state.value.busy || state.value.previewing) return
+        if (state.value.busy) { message("Another operation is running. Open the archive again when it has finished."); return }
+        if (state.value.previewing) return
         mutable.update { it.copy(previewing = true, archivePreview = null, archiveSource = null, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -238,13 +261,16 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         val source = state.value.archiveSource
         if (source == null || state.value.previewing || state.value.busy) { password?.fill('\u0000'); return }
         val token = OperationControl { bytes, current -> mutable.update { it.copy(progress = bytes, operation = "Open file · $current") } }
-        control = token
         mutable.update { it.copy(previewing = true, operation = "Opening archive item", progress = 0, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
-            try { mutable.update { it.copy(fileToOpen = repository.openArchiveItem(source, path, password, token)) } }
+            // Viewing one member only matters to this screen: closing the screen interrupts it.
+            try {
+                val opened = runInterruptible { repository.openArchiveItem(source, path, password, token) }
+                mutable.update { it.copy(fileToOpen = opened) }
+            }
             catch (e: PasswordRequiredError) { mutable.update { it.copy(passwordRequest = PasswordRequest(source, null, itemPath = path, wrongPassword = e.wrongPassword)) } }
             catch (e: Exception) { message(safeError(e)) }
-            finally { password?.fill('\u0000'); control = null; mutable.update { it.copy(previewing = false) } }
+            finally { password?.fill('\u0000'); mutable.update { it.copy(previewing = false) } }
         }
     }
     /** The user typed a password for a pending request: rerun exactly that operation with it. */
@@ -291,61 +317,44 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun clipboard(cut: Boolean) { mutable.update { it.copy(clipboard = selected(), cut = cut, selected = emptySet()) } }
     fun clearClipboard() { mutable.update { it.copy(clipboard = emptyList()) } }
-    fun cancel() { control?.cancel(); answer?.complete(false) }
-    fun collisionAnswer(replace: Boolean) { answer?.complete(replace) }
-    private fun confirm(name: String): Boolean {
-        val future = CompletableFuture<Boolean>()
-        answer = future
-        mutable.update { it.copy(collision = name) }
-        try {
-            while (true) {
-                control?.check()
-                try { return future.get(200, TimeUnit.MILLISECONDS) } catch (_: TimeoutException) { }
-            }
-        } finally { answer = null; mutable.update { it.copy(collision = null) } }
-    }
+    fun cancel() { manager.cancel() }
+    fun collisionAnswer(replace: Boolean) { manager.answerCollision(replace) }
+    /**
+     * Hands [action] to the app-wide [OperationManager]. It keeps running when this screen is closed;
+     * a second operation is refused while one is running, whichever screen started it.
+     */
     private fun execute(
         label: String, password: CharArray? = null, noticeTarget: File? = null, expectedBytes: (() -> Long)? = null,
         askPassword: ((Boolean) -> PasswordRequest)? = null, action: (OperationControl) -> Unit
     ) {
-        if (state.value.busy || state.value.loading) { password?.fill('\u0000'); return }
-        val app = getApplication<Application>()
-        var lastNotification = 0L
-        val token = OperationControl { bytes, current ->
-            mutable.update { it.copy(progress = bytes, currentItem = current, operation = "$label \u00b7 $current") }
-            // Refresh the ongoing notification about once a second; the in-app bar updates far more often.
-            val now = System.currentTimeMillis()
-            if (now - lastNotification > 800) {
-                lastNotification = now
-                val total = state.value.operationTotal
-                val percent = if (total > 0) ((bytes * 100) / total).coerceIn(0, 100).toInt() else OperationService.UNKNOWN
-                OperationService.update(app, label, current, percent)
-            }
+        if (state.value.loading) { password?.fill('\u0000'); return }
+        val id = manager.start(label, noticeTarget, expectedBytes) { token ->
+            try { action(token) } finally { password?.fill('\u0000') }
         }
-        control = token
+        if (id == null) {
+            password?.fill('\u0000')
+            message("Another operation is still running. Wait for it to finish or cancel it first.")
+            return
+        }
+        passwordRetry = askPassword?.let { id to it }
         mutable.update { it.copy(busy = true, operation = label, progress = 0, operationTotal = 0, currentItem = "", message = null, notice = null) }
-        // A foreground service keeps long extractions alive when the user leaves the app.
-        OperationService.update(app, label, "", OperationService.UNKNOWN)
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Known totals turn the progress bar into a real percentage; unknown ones stay indeterminate.
-                val total = expectedBytes?.let { runCatching(it).getOrDefault(0L) } ?: 0L
-                if (total > 0) mutable.update { it.copy(operationTotal = total) }
-                action(token)
-                mutable.update { it.copy(notice = "$label completed.", noticeTarget = noticeTarget) }
-            }
-            catch (e: PasswordRequiredError) {
-                // The repository already discarded any partial output; ask the UI for a password and let the user retry.
-                if (askPassword != null) mutable.update { it.copy(passwordRequest = askPassword(e.wrongPassword)) } else message(safeError(e))
-            }
-            catch (e: Exception) { message(safeError(e)) }
-            finally {
-                password?.fill('\u0000'); control = null
-                transientSelection = null
-                OperationService.stop(app)
-                mutable.update { it.copy(busy = false, selected = emptySet(), operationTotal = 0, currentItem = "") }
-                refresh()
-            }
+    }
+    /**
+     * Shows the oldest result no screen has shown yet (success notice, password prompt or error) once
+     * no other message is open. Whichever visible screen calls this first takes the result.
+     */
+    fun showOutcome() {
+        val current = state.value
+        if (current.message != null || current.passwordRequest != null || current.notice != null) return
+        val outcome = manager.takeOutcome() ?: return
+        val retry = passwordRetry?.takeIf { it.first == outcome.id }?.second
+        if (retry != null) passwordRetry = null
+        val error = outcome.error
+        when {
+            error == null -> mutable.update { it.copy(notice = "${outcome.label} completed.", noticeTarget = outcome.target) }
+            // The repository already discarded any partial output; ask for a password and let the user retry.
+            error is PasswordRequiredError && retry != null -> mutable.update { it.copy(passwordRequest = retry(error.wrongPassword)) }
+            else -> message(safeError(error))
         }
     }
     fun mkdir(name: String) { val parent = state.value.folders.lastOrNull() ?: return; execute("Create folder") { repository.createFolder(parent, name) } }
@@ -354,7 +363,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     fun paste() {
         val current = state.value; val parent = current.folders.lastOrNull() ?: return
         execute(if (current.cut) "Move" else "Copy") {
-            repository.copy(current.clipboard, parent, current.cut, it, ::confirm)
+            repository.copy(current.clipboard, parent, current.cut, it, manager::confirm)
             mutable.update { state -> state.copy(clipboard = emptyList()) }
         }
     }
@@ -364,7 +373,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         if (destination == null || entries.isEmpty()) { password?.fill('\u0000'); return }
         val kind = when { name.endsWith(".7z", true) -> "7z"; name.endsWith(".tar.gz", true) || name.endsWith(".tgz", true) -> "TAR.GZ"; else -> "ZIP" }
         execute("Create $kind", password, noticeTarget = destination, expectedBytes = { entries.sumOf { entry -> if (entry.directory) 0L else entry.size } }) {
-            repository.zip(entries, destination, name, password, it, ::confirm)
+            repository.zip(entries, destination, name, password, it, manager::confirm)
         }
     }
     /** Extracts the selected archive into a new sub-folder of [target], defaulting to the folder currently shown. */
@@ -391,7 +400,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         execute(
             "Extract archive", password, noticeTarget = File(destination, name), expectedBytes = { unpackedSize(source) },
             askPassword = { wrong -> PasswordRequest(source, destination, folderName = name, wrongPassword = wrong) }
-        ) { repository.extract(source, destination, name, password, it, ::confirm) }
+        ) { repository.extract(source, destination, name, password, it, manager::confirm) }
     }
     /** Metadata-only estimate of an archive's unpacked size; 0 when the listing is unavailable. */
     private fun unpackedSize(source: Entry): Long =
@@ -406,13 +415,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         execute(
             "Extract archive", password, noticeTarget = destination, expectedBytes = { unpackedSize(source) },
             askPassword = { wrong -> PasswordRequest(source, destination, wrongPassword = wrong) }
-        ) { repository.extractHere(source, destination, password, it, ::confirm) }
-    }
-    override fun onCleared() {
-        cancel()
-        OperationService.cancelRequest = null
-        OperationService.stop(getApplication<Application>())
-        super.onCleared()
+        ) { repository.extractHere(source, destination, password, it, manager::confirm) }
     }
 
     private companion object {

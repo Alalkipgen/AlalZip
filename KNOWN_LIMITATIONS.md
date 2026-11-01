@@ -3,7 +3,7 @@
 ## Validation and lifecycle
 
 - No Kotlin compilation, Android lint, JVM JUnit execution or device tests were possible here. No APK exists. Structural Python checks are not application behavior tests.
-- Foreground operations only: ViewModel survives rotation, but no foreground service/WorkManager or process-death recovery. Backgrounding may pause/kill work. Cancellation is cooperative at stream boundaries, not immediate while a provider/library parses, derives a key or blocks in I/O.
+- One operation runs at a time, owned by the app process rather than a screen, and a `dataSync` foreground service keeps it going in the background. Back, Recents and closing a screen do not cancel it, but nothing is resumed after the process dies or Android stops the service (Android 15+ limits `dataSync` time per day). Cancellation is cooperative at stream boundaries, not immediate while a provider/library parses, derives a key or blocks in I/O.
 - A killed process may leave an incomplete *new* SAF destination or an AP-backup item. Private staging is cleaned on next app startup; no journal resumes a transaction. Keep the app foreground and inspect destinations after interruption.
 - Search is current-folder/archive-folder name search only, not recursive. File viewing depends on a compatible installed Android app. No built-in media/PDF/office renderer, favorites, tabs, share action, split-volume selection, configurable limits, timestamps/permissions preservation, recycle bin or undo.
 - ZIP/RAR browsing is metadata-only until a file is tapped; then only that member is copied into private cache, with a 512 MiB per-file viewing limit. Split or linked members are refused.
