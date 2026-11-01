@@ -1152,7 +1152,7 @@ fun PocketApp(
             ) {
                 ExpandableNote(
                     summary = "The existing item is kept as a backup, not deleted.",
-                    details = "It is renamed to AP-backup-\u2026 before the new data is written. If the operation fails, the backup stays in place."
+                    details = "The new data is prepared first. Only once it is complete is the existing item renamed to AP-backup-\u2026 and the new one put in its place. If the operation fails or Archive is closed before that, the existing item keeps its name."
                 )
             }
         }

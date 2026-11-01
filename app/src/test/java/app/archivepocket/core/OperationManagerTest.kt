@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class OperationManagerTest {
-    private fun manager(starts: AtomicInteger = AtomicInteger(), cleanup: () -> Unit = {}) =
+    private fun manager(starts: AtomicInteger = AtomicInteger(), cleanup: () -> String? = { null }) =
         OperationManager(onStart = { starts.incrementAndGet() }, startupCleanup = cleanup)
 
     private fun OperationManager.await(condition: (OperationState) -> Boolean): OperationState =
@@ -71,12 +71,21 @@ class OperationManagerTest {
     @Test fun startupCleanupFinishesBeforeTheFirstOperation() {
         val release = CountDownLatch(1)
         val cleaned = AtomicBoolean(false)
-        val manager = manager { assertTrue(release.await(10, TimeUnit.SECONDS)); cleaned.set(true) }
+        val manager = manager { assertTrue(release.await(10, TimeUnit.SECONDS)); cleaned.set(true); null }
         val sawCleanup = AtomicBoolean(false)
         manager.start("Delete") { sawCleanup.set(cleaned.get()) }
         release.countDown()
         manager.await { !it.running }
         assertTrue(sawCleanup.get())
+    }
+
+    @Test fun startupReportIsShownOnce() {
+        val manager = manager { "Extracting \u201cphotos.zip\u201d did not finish." }
+        manager.await { it.outcomes.isNotEmpty() }
+        val outcome = manager.takeOutcome()!!
+        assertNull(outcome.error)
+        assertEquals("Extracting \u201cphotos.zip\u201d did not finish.", outcome.note)
+        assertNull(manager.takeOutcome())
     }
 
     @Test fun failedStartupCleanupIsReported() {

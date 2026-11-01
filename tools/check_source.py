@@ -56,7 +56,8 @@ class SourceChecks(unittest.TestCase):
     def test_no_fake_or_password_logging(self):
         sources = list((ROOT / "app/src/main/java").rglob("*.kt"))
         self.assertEqual({"MainActivity.kt", "PocketViewModel.kt", "FileRepository.kt", "Safety.kt", "ArchiveEngine.kt",
-                          "OperationService.kt", "OperationManager.kt", "SevenZipSupport.kt", "TarGzSupport.kt"}, {path.name for path in sources})
+                          "OperationService.kt", "OperationManager.kt", "OperationJournal.kt", "SevenZipSupport.kt", "TarGzSupport.kt"},
+                         {path.name for path in sources})
         for path in sources:
             text = path.read_text()
             self.assertNotRegex(text, r"TODO\(|NotImplementedError|Thread\.sleep|android\.util\.Log|println\(")
@@ -89,6 +90,13 @@ class SourceChecks(unittest.TestCase):
         for marker in (".alalzip-tmp-", "private fun <T> staged(", "output.renameTo(", "verifyLargeFiles"):
             self.assertIn(marker, saf)
         self.assertNotIn("private fun workspace()", saf)
+        # Results are renamed into place from journaled staging; recovery follows journals, never name scans.
+        journal = (ROOT / "app/src/main/java/app/archivepocket/data/OperationJournal.kt").read_text()
+        for marker in ("fun recoverInterrupted(", "staging.publish(", "journal.backup(", "journal.stage(", "OperationJournal.leftovers("):
+            self.assertIn(marker, saf)
+        self.assertIn("fd.sync()", journal)
+        self.assertNotIn('startsWith("op-")', saf)
+        self.assertNotRegex(saf, r"listFiles\(\)\?\.filter \{ it\.name\.startsWith")
         for marker in ("startForeground(", "NotificationCompat", "ACTION_CANCEL"):
             self.assertIn(marker, service)
 

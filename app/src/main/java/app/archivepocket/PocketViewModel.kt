@@ -351,6 +351,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         if (retry != null) passwordRetry = null
         val error = outcome.error
         when {
+            error == null && outcome.note != null -> message(outcome.note)
             error == null -> mutable.update { it.copy(notice = "${outcome.label} completed.", noticeTarget = outcome.target) }
             // The repository already discarded any partial output; ask for a password and let the user retry.
             error is PasswordRequiredError && retry != null -> mutable.update { it.copy(passwordRequest = retry(error.wrongPassword)) }

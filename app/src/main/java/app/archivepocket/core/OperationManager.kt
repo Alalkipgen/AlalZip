@@ -35,8 +35,11 @@ data class OperationState(
     val outcomes: List<OperationOutcome> = emptyList(),
 )
 
-/** How one operation ended: [error] is null when it completed. [target] is the folder a success notice opens. */
-data class OperationOutcome(val id: Long, val label: String, val error: Exception?, val target: File?)
+/**
+ * How one operation ended: [error] is null when it completed. [target] is the folder a success notice
+ * opens; [note] is something to tell the user instead of the usual notice.
+ */
+data class OperationOutcome(val id: Long, val label: String, val error: Exception?, val target: File?, val note: String? = null)
 
 /**
  * Owns the one archive operation that may run at a time, for the whole app process. Screens and
@@ -46,7 +49,8 @@ data class OperationOutcome(val id: Long, val label: String, val error: Exceptio
  */
 class OperationManager internal constructor(
     private val onStart: () -> Unit,
-    startupCleanup: () -> Unit,
+    /** Runs once before the first operation; returns what to tell the user about an earlier process, if anything. */
+    startupCleanup: () -> String?,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
@@ -58,13 +62,13 @@ class OperationManager internal constructor(
 
     /** Leftovers of an earlier process are cleaned once per process, before any operation touches storage. */
     private val startup: Job = scope.launch {
-        try { startupCleanup() } catch (e: Exception) { report("Startup cleanup", e) }
+        try { startupCleanup()?.let { report("Startup cleanup", null, it) } } catch (e: Exception) { report("Startup cleanup", e, null) }
     }
 
-    private fun report(label: String, error: Exception?) {
+    private fun report(label: String, error: Exception?, note: String?) {
         synchronized(lock) {
             val id = ++lastId
-            mutable.update { it.copy(finished = id, outcomes = it.outcomes + OperationOutcome(id, label, error, null)) }
+            mutable.update { it.copy(finished = id, outcomes = it.outcomes + OperationOutcome(id, label, error, null, note)) }
         }
     }
 
@@ -165,7 +169,12 @@ class OperationManager internal constructor(
 
         private fun create(app: Context): OperationManager {
             val repository = FileRepository(app)
-            return OperationManager(onStart = { OperationService.start(app) }, startupCleanup = repository::cleanAbandoned)
+            return OperationManager(onStart = { OperationService.start(app) }) {
+                // Interrupted operations first: what they left in shared storage matters most.
+                val interrupted = repository.recoverInterrupted()
+                val cache = try { repository.cleanAbandoned(); null } catch (e: PocketError) { e.message }
+                listOfNotNull(interrupted, cache).joinToString("\n\n").ifEmpty { null }
+            }
         }
     }
 }
