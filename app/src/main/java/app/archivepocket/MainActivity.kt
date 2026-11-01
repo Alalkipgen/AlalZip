@@ -129,7 +129,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Screenshots stay allowed so users can report UI issues; passwords are always masked and never saved.
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        incomingArchive = intent.archiveUri()
+        // A recreated screen (rotation, for example) still holds the archive it opened; only a new intent opens one.
+        incomingArchive = if (savedInstanceState == null) intent.archiveUri() else null
         setContent {
             PocketApp(
                 incomingArchive = incomingArchive,
@@ -1119,7 +1120,7 @@ fun PocketApp(
         state.archivePreview?.let { preview ->
             ArchiveBrowser(preview = preview, busy = state.previewing, dismiss = model::closePreview, openItem = model::openArchiveItem) {
                 val source = state.archiveSource
-                model.closePreview()
+                model.closePreview(keepSource = true)
                 if (source != null) { model.clearSelection(); model.ensureSelected(source); dialog = "extract" }
             }
         }

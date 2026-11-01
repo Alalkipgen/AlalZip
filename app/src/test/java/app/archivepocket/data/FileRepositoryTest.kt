@@ -15,6 +15,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.atomic.AtomicInteger
 
 class FileRepositoryTest {
@@ -376,5 +378,108 @@ class FileRepositoryTest {
         assertEquals("new", source.readText())
         assertEquals(emptyList<File>(), backups(destination))
         assertNoLeftovers(destination)
+    }
+
+    // ---------------------------------------------------------------- archives opened from other apps
+
+    private fun incoming() = File(cache, "incoming-archives")
+    private fun sessions() = incoming().listFiles()?.toList().orEmpty()
+    private fun copies() = incoming().walkTopDown().filter { it.isFile }.toList()
+    /** Endless provider stream; [onRead] runs before each chunk is handed out, counting from 0. */
+    private fun stream(onRead: (Int) -> Unit) = object : InputStream() {
+        private var reads = 0
+        override fun read(): Int = throw AssertionError("Copies must read in chunks")
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            onRead(reads++)
+            b.fill(7, off, off + len)
+            return len
+        }
+    }
+
+    @Test fun importCopiesTheArchiveIntoPrivateCache() {
+        val bytes = zip(File(temporary.root, "shared.zip"), "a.txt" to "hello").readBytes()
+        val repository = repository()
+        val entry = repository.importIncoming("photos.zip", bytes.size.toLong(), OperationControl()) { bytes.inputStream() }
+        assertEquals("photos.zip", entry.name)
+        assertEquals(bytes.size.toLong(), entry.size)
+        assertEquals(listOf(entry.file), copies())
+        assertTrue(bytes.contentEquals(entry.file.readBytes()))
+        assertEquals(listOf("a.txt"), repository.preview(entry).items.map { it.path })
+    }
+
+    @Test fun importRefusesAnArchiveThatCannotFitBeforeCopyingAnything() {
+        var opened = false
+        val error = failure {
+            repository().importIncoming("huge.zip", Long.MAX_VALUE / 2, OperationControl()) { opened = true; "x".byteInputStream() }
+        }
+        assertTrue(error.message!!, error.message!!.startsWith("Not enough storage"))
+        assertFalse(opened)
+        assertEquals(emptyList<File>(), sessions())
+    }
+
+    @Test fun cancelledImportDeletesThePartialCopy() {
+        val control = OperationControl()
+        val source = stream { reads ->
+            if (reads == 2) {
+                assertTrue(copies().single().length() > 0)
+                control.cancel()
+            }
+        }
+        failure { repository().importIncoming("big.zip", 0, control) { source } }
+        assertEquals(emptyList<File>(), sessions())
+    }
+
+    @Test fun failedImportDeletesThePartialCopy() {
+        val source = stream { reads -> if (reads == 2) throw IOException("Connection lost") }
+        try {
+            repository().importIncoming("cloud.zip", 0, OperationControl()) { source }
+            fail("A broken stream must not produce a copy")
+        } catch (error: IOException) {
+            assertEquals("Connection lost", error.message)
+        }
+        assertEquals(emptyList<File>(), sessions())
+    }
+
+    @Test fun unreadableOrEmptyImportLeavesNothing() {
+        val repository = repository()
+        assertEquals("Android could not open the selected archive.",
+            failure { repository.importIncoming("a.zip", 0, OperationControl()) { null } }.message)
+        assertEquals("The selected archive is empty or could not be copied.",
+            failure { repository.importIncoming("a.zip", 0, OperationControl()) { ByteArray(0).inputStream() } }.message)
+        assertEquals(emptyList<File>(), sessions())
+    }
+
+    @Test fun newImportReplacesThePreviousCopy() {
+        val repository = repository()
+        val first = repository.importIncoming("one.zip", 0, OperationControl()) { "1".byteInputStream() }
+        val second = repository.importIncoming("two.zip", 0, OperationControl()) { "2".byteInputStream() }
+        assertFalse(first.file.exists())
+        assertEquals(listOf(second.file), copies())
+    }
+
+    @Test fun importKeepsOneSafeFileName() {
+        val repository = repository()
+        fun imported(name: String) = repository.importIncoming(name, 0, OperationControl()) { "1".byteInputStream() }.name
+        assertEquals("a_b_c_.zip", imported("a/b\\c:.zip"))
+        assertEquals("Archive.zip", imported(".."))
+        val long = imported("\u00e9".repeat(300) + ".zip")
+        assertTrue(long, long.endsWith(".zip") && long.toByteArray().size <= 200)
+    }
+
+    @Test fun discardDeletesOnlyPrivateCopies() {
+        val repository = repository()
+        val copy = repository.importIncoming("one.zip", 0, OperationControl()) { "1".byteInputStream() }
+        val shared = write(File(folder("Download/Archives"), "keep.zip"), "k")
+        repository.discardIncoming(repository.entry(shared))
+        assertTrue(shared.isFile)
+        assertTrue(copy.file.isFile)
+        repository.discardIncoming(copy)
+        assertEquals(emptyList<File>(), sessions())
+    }
+
+    @Test fun startupCleanupRemovesCopiesOfAnEarlierProcess() {
+        repository().importIncoming("one.zip", 0, OperationControl()) { "1".byteInputStream() }
+        repository().cleanAbandoned()
+        assertEquals(emptyList<File>(), sessions())
     }
 }

@@ -37,9 +37,12 @@ data class OperationState(
 
 /**
  * How one operation ended: [error] is null when it completed. [target] is the folder a success notice
- * opens; [note] is something to tell the user instead of the usual notice.
+ * opens; [note] is something to tell the user instead of the usual notice. [quiet] operations show their
+ * result themselves, so only an error is reported for them.
  */
-data class OperationOutcome(val id: Long, val label: String, val error: Exception?, val target: File?, val note: String? = null)
+data class OperationOutcome(
+    val id: Long, val label: String, val error: Exception?, val target: File?, val note: String? = null, val quiet: Boolean = false
+)
 
 /**
  * Owns the one archive operation that may run at a time, for the whole app process. Screens and
@@ -76,7 +79,10 @@ class OperationManager internal constructor(
      * Runs [action] on a background thread and returns its id, or returns null without doing
      * anything while another operation is still running. [expectedBytes] is evaluated on that thread.
      */
-    fun start(label: String, target: File? = null, expectedBytes: (() -> Long)? = null, action: (OperationControl) -> Unit): Long? {
+    fun start(
+        label: String, target: File? = null, expectedBytes: (() -> Long)? = null, quiet: Boolean = false,
+        action: (OperationControl) -> Unit
+    ): Long? {
         val token = OperationControl { bytes, item -> mutable.update { it.copy(progress = bytes, item = item) } }
         val id: Long
         synchronized(lock) {
@@ -108,7 +114,7 @@ class OperationManager internal constructor(
                     mutable.update {
                         it.copy(
                             running = false, collision = null, cancelling = false, finished = id,
-                            outcomes = it.outcomes + OperationOutcome(id, label, failure, target)
+                            outcomes = it.outcomes + OperationOutcome(id, label, failure, target, quiet = quiet)
                         )
                     }
                 }

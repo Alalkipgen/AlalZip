@@ -23,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import java.io.File
@@ -199,18 +200,22 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Copies an archive received from Android's Open-with chooser into private cache, then previews it. */
+    /**
+     * Previews an archive received from Android's Open-with chooser. A content:// archive is first copied
+     * into private cache as an operation of its own, with progress and Cancel, like any other operation.
+     */
     fun previewExternal(uri: Uri) {
-        if (state.value.busy) { message("Another operation is running. Open the archive again when it has finished."); return }
         if (state.value.previewing) return
+        if (!uri.scheme.equals("file", ignoreCase = true)) { importExternal(uri); return }
+        if (state.value.busy) { message(OPEN_LATER); return }
         mutable.update { it.copy(previewing = true, archivePreview = null, archiveSource = null, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val entry = cacheIncomingArchive(uri)
-                transientSelection = entry
+                val direct = uri.path?.let(::File) ?: throw PocketError("The selected archive path is invalid.")
+                if (!direct.isFile) throw PocketError("The selected archive is not available.")
+                val entry = repository.entry(direct)
                 mutable.update { it.copy(archiveSource = entry, archivePreview = repository.preview(entry)) }
             } catch (e: Exception) {
-                transientSelection = null
                 mutable.update { it.copy(archiveSource = null) }
                 message(safeError(e))
             } finally {
@@ -219,20 +224,58 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun cacheIncomingArchive(uri: Uri): Entry {
-        val app = getApplication<Application>()
-        if (uri.scheme.equals("file", ignoreCase = true)) {
-            val direct = uri.path?.let(::File) ?: throw PocketError("The selected archive path is invalid.")
-            if (!direct.isFile) throw PocketError("The selected archive is not available.")
-            return repository.entry(direct)
-        }
-
-        val resolver = app.contentResolver
-        val displayName = runCatching {
-            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
+    /** Copies a content:// archive into private cache, then previews the copy. */
+    private fun importExternal(uri: Uri) {
+        val resolver = getApplication<Application>().contentResolver
+        // Asked on the operation's thread: the app that shares the archive may be slow to answer.
+        val details = lazy { incomingDetails(uri) }
+        val id = manager.start("Open archive", expectedBytes = { details.value.second }, quiet = true) { token ->
+            val (name, size) = details.value
+            // Set while the copy exists but no preview shows it; deleted unless the preview takes it over.
+            var unused: Entry? = null
+            try {
+                val entry = repository.importIncoming(name, size, token) { runCatching { resolver.openInputStream(uri) }.getOrNull() }
+                unused = entry
+                val preview = repository.preview(entry)
+                token.check()
+                // The screen that asked for the archive may have been closed meanwhile; then nothing can show the copy.
+                if (viewModelScope.isActive) {
+                    mutable.update { it.copy(archiveSource = entry, archivePreview = preview) }
+                    unused = null
+                }
+            } catch (e: PocketError) {
+                if (manager.state.value.cancelling) throw PocketError("Opening the archive was cancelled.")
+                throw e
+            } finally {
+                unused?.let(repository::discardIncoming)
             }
-        }.getOrNull()
+        }
+        if (id == null) { message(OPEN_LATER); return }
+        mutable.update {
+            it.copy(
+                busy = true, operation = "Open archive", progress = 0, operationTotal = 0, currentItem = "",
+                message = null, notice = null, archivePreview = null, archiveSource = null
+            )
+        }
+    }
+
+    /** File name and size (0 when unknown) that the app sharing [uri] reports for it. */
+    private fun incomingDetails(uri: Uri): Pair<String, Long> {
+        var displayName: String? = null
+        var size = 0L
+        runCatching {
+            getApplication<Application>().contentResolver
+                .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        displayName = runCatching { cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) }.getOrNull()
+                        // Without a size the copy is still checked for space while it runs.
+                        size = runCatching {
+                            val index = cursor.getColumnIndexOrThrow(OpenableColumns.SIZE)
+                            if (cursor.isNull(index)) 0L else cursor.getLong(index)
+                        }.getOrDefault(0L)
+                    }
+                }
+        }
         val rawName = (displayName ?: uri.lastPathSegment ?: "Archive.zip")
             .substringAfterLast('/')
             .substringAfterLast('\\')
@@ -242,20 +285,18 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             "$rawName.zip"
         }
-        val incoming = File(app.cacheDir, "incoming-archives")
-        if (!incoming.isDirectory && !incoming.mkdirs()) throw PocketError("Cannot create private archive cache.")
-        incoming.listFiles()?.forEach { it.deleteRecursively() }
-        val target = File(incoming, name)
-        val input = resolver.openInputStream(uri) ?: throw PocketError("Android could not open the selected archive.")
-        input.use { source -> target.outputStream().use { output -> source.copyTo(output) } }
-        if (!target.isFile || target.length() == 0L) {
-            target.delete()
-            throw PocketError("The selected archive is empty or could not be copied.")
-        }
-        return Entry(target, name, directory = false, size = target.length(), modified = target.lastModified())
+        return name to size.coerceAtLeast(0L)
     }
 
-    fun closePreview() { mutable.update { it.copy(archivePreview = null, archiveSource = null) } }
+    /**
+     * Closes the archive preview. The private copy of an archive opened from another app is deleted with
+     * it, unless [keepSource] because the copy is about to be extracted.
+     */
+    fun closePreview(keepSource: Boolean = false) {
+        val source = state.value.archiveSource
+        mutable.update { it.copy(archivePreview = null, archiveSource = null) }
+        if (source != null && !keepSource) viewModelScope.launch(Dispatchers.IO) { repository.discardIncoming(source) }
+    }
     /** Decompresses one selected member only into private cache, then hands it to Android's viewer. */
     fun openArchiveItem(path: String, password: CharArray? = null) {
         val source = state.value.archiveSource
@@ -277,7 +318,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
     fun answerPassword(password: CharArray?) {
         val request = state.value.passwordRequest
         mutable.update { it.copy(passwordRequest = null) }
-        if (request == null || password == null || password.isEmpty()) { password?.fill('\u0000'); return }
+        if (request == null || password == null || password.isEmpty()) { password?.fill('\u0000'); request?.let(::dropRetry); return }
         when {
             request.itemPath != null -> {
                 if (state.value.archiveSource == null) mutable.update { it.copy(archiveSource = request.source) }
@@ -288,7 +329,15 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
             else -> runExtractHere(request.source, request.destination, password)
         }
     }
-    fun cancelPassword() { mutable.update { it.copy(passwordRequest = null) } }
+    fun cancelPassword() {
+        val request = state.value.passwordRequest
+        mutable.update { it.copy(passwordRequest = null) }
+        request?.let(::dropRetry)
+    }
+    /** An extraction that will not be retried leaves no use for the private copy of an archive opened from another app. */
+    private fun dropRetry(request: PasswordRequest) {
+        if (request.destination != null) viewModelScope.launch(Dispatchers.IO) { repository.discardIncoming(request.source) }
+    }
     fun consumeOpenedFile() { mutable.update { it.copy(fileToOpen = null) } }
     fun enter(entry: Entry) { if (!state.value.loading && entry.directory) load(state.value.folders + entry.file) }
     fun back() { if (!state.value.loading && state.value.folders.size > 1) load(state.value.folders.dropLast(1)) }
@@ -351,6 +400,8 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         if (retry != null) passwordRetry = null
         val error = outcome.error
         when {
+            // Opening an archive from another app shows its preview instead of a notice.
+            error == null && outcome.quiet -> Unit
             error == null && outcome.note != null -> message(outcome.note)
             error == null -> mutable.update { it.copy(notice = "${outcome.label} completed.", noticeTarget = outcome.target) }
             // The repository already discarded any partial output; ask for a password and let the user retry.
@@ -401,7 +452,7 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         execute(
             "Extract archive", password, noticeTarget = File(destination, name), expectedBytes = { unpackedSize(source) },
             askPassword = { wrong -> PasswordRequest(source, destination, folderName = name, wrongPassword = wrong) }
-        ) { repository.extract(source, destination, name, password, it, manager::confirm) }
+        ) { token -> releasing(source) { repository.extract(source, destination, name, password, token, manager::confirm) } }
     }
     /** Metadata-only estimate of an archive's unpacked size; 0 when the listing is unavailable. */
     private fun unpackedSize(source: Entry): Long =
@@ -416,12 +467,21 @@ class PocketViewModel(app: Application) : AndroidViewModel(app) {
         execute(
             "Extract archive", password, noticeTarget = destination, expectedBytes = { unpackedSize(source) },
             askPassword = { wrong -> PasswordRequest(source, destination, wrongPassword = wrong) }
-        ) { repository.extractHere(source, destination, password, it, manager::confirm) }
+        ) { token -> releasing(source) { repository.extractHere(source, destination, password, token, manager::confirm) } }
+    }
+    /**
+     * Runs an extraction of [source]. Nothing can extract the private copy of an archive opened from
+     * another app again once it is over, so the copy is deleted then, unless a password prompt may retry.
+     */
+    private fun releasing(source: Entry, block: () -> Unit) {
+        try { block() } catch (e: PasswordRequiredError) { throw e } catch (e: Exception) { repository.discardIncoming(source); throw e }
+        repository.discardIncoming(source)
     }
 
     private companion object {
         const val RECENT_KEY = "recent-destinations"
         const val VERIFY_KEY = "verify-large-copies"
         const val RECENT_LIMIT = 5
+        const val OPEN_LATER = "Another operation is running. Open the archive again when it has finished."
     }
 }

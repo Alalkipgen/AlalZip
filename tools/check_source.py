@@ -118,6 +118,20 @@ class SourceChecks(unittest.TestCase):
         for forbidden in ("OperationService.update(", "OperationService", "onCleared", "cleanAbandoned"):
             self.assertNotIn(forbidden, model)
 
+    def test_incoming_archive_import(self):
+        # Archives shared by other apps are copied as a cancellable, space-checked operation and imported only once.
+        code = ROOT / "app/src/main/java/app/archivepocket"
+        repository = (code / "data/FileRepository.kt").read_text()
+        model = (code / "PocketViewModel.kt").read_text()
+        activity = (code / "MainActivity.kt").read_text()
+        for marker in ("fun importIncoming(", "Safety.space(cacheDir, declaredSize)", "spaceRoot = cacheDir",
+                       "session.deleteRecursively()", "fun discardIncoming(", "clearIncoming()"):
+            self.assertIn(marker, repository)
+        for marker in ("OpenableColumns.SIZE", 'manager.start("Open archive"', "repository.importIncoming(", "repository.discardIncoming("):
+            self.assertIn(marker, model)
+        self.assertNotIn("copyTo(", model)
+        self.assertIn("if (savedInstanceState == null) intent.archiveUri() else null", activity)
+
     def test_dependencies_pinned(self):
         build = (ROOT / "app/build.gradle.kts").read_text()
         self.assertIn("net.lingala.zip4j:zip4j:2.11.6", build)
