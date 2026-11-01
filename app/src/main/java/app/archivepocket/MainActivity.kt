@@ -782,6 +782,8 @@ fun PocketApp(
         if (result == SnackbarResult.ActionPerformed && target != null) model.reveal(target)
         model.consumeNotice()
     }
+    // Operations outlive screens; a finished one reports here once no other message is showing.
+    LaunchedEffect(state.pendingOutcome, state.message, state.passwordRequest, state.notice) { model.showOutcome() }
 
     val selected = state.entries.filter { it.path in state.selected }
     val selecting = state.selected.isNotEmpty()

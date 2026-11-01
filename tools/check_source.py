@@ -56,7 +56,7 @@ class SourceChecks(unittest.TestCase):
     def test_no_fake_or_password_logging(self):
         sources = list((ROOT / "app/src/main/java").rglob("*.kt"))
         self.assertEqual({"MainActivity.kt", "PocketViewModel.kt", "FileRepository.kt", "Safety.kt", "ArchiveEngine.kt",
-                          "OperationService.kt", "SevenZipSupport.kt", "TarGzSupport.kt"}, {path.name for path in sources})
+                          "OperationService.kt", "OperationManager.kt", "SevenZipSupport.kt", "TarGzSupport.kt"}, {path.name for path in sources})
         for path in sources:
             text = path.read_text()
             self.assertNotRegex(text, r"TODO\(|NotImplementedError|Thread\.sleep|android\.util\.Log|println\(")
@@ -89,9 +89,26 @@ class SourceChecks(unittest.TestCase):
         for marker in (".alalzip-tmp-", "private fun <T> staged(", "output.renameTo(", "verifyLargeFiles"):
             self.assertIn(marker, saf)
         self.assertNotIn("private fun workspace()", saf)
-        for marker in ("startForeground(", "NotificationCompat", "ACTION_CANCEL", "cancelRequest"):
+        for marker in ("startForeground(", "NotificationCompat", "ACTION_CANCEL"):
             self.assertIn(marker, service)
-        self.assertIn("OperationService.update(", (ROOT / "app/src/main/java/app/archivepocket/PocketViewModel.kt").read_text())
+
+    def test_operation_owned_by_app(self):
+        # One app-wide manager owns the running job; the service and every screen only observe it.
+        code = ROOT / "app/src/main/java/app/archivepocket"
+        manager = (code / "core/OperationManager.kt").read_text()
+        service = (code / "core/OperationService.kt").read_text()
+        model = (code / "PocketViewModel.kt").read_text()
+        for marker in ("SupervisorJob()", "StateFlow<OperationState>", "fun cancel()", "fun confirm(", "startup.join()"):
+            self.assertIn(marker, manager)
+        for marker in ("manager.cancel()", "override fun onTimeout(startId: Int, fgsType: Int)", "stopSelf()",
+                       "Needs your decision", "Stopped by Android", "setContentIntent("):
+            self.assertIn(marker, service)
+        self.assertIn("OperationManager.get(", model)
+        for text in (service, model):
+            self.assertNotIn("cancelRequest", text)
+        # Screens never drive the service or cancel work when they go away.
+        for forbidden in ("OperationService.update(", "OperationService", "onCleared", "cleanAbandoned"):
+            self.assertNotIn(forbidden, model)
 
     def test_dependencies_pinned(self):
         build = (ROOT / "app/build.gradle.kts").read_text()
