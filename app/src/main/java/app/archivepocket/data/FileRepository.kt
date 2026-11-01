@@ -31,7 +31,7 @@ data class Entry(val file: File, val name: String, val directory: Boolean, val s
  * operation leaves unfinished when the process is killed is rolled back by [recoverInterrupted].
  */
 class FileRepository(
-    cacheDir: File,
+    private val cacheDir: File,
     val root: File,
     filesDir: File,
     /** Same-volume move of one item; replaceable so tests can simulate storage that refuses renames. */
@@ -41,6 +41,8 @@ class FileRepository(
 
     private val tempRoot = File(cacheDir, "archivepocket-operations")
     private val shareRoot = File(cacheDir, "shared-preview")
+    /** Private copies of archives that other apps opened in Archive through content:// URIs. */
+    private val incomingRoot = File(cacheDir, "incoming-archives")
     private val journals = File(filesDir, "operation-journals")
 
     /**
@@ -114,6 +116,50 @@ class FileRepository(
             throw PocketError("Cannot clean previous private temporary files. Clear app cache from Android Settings.")
         }
         shareRoot.listFiles()?.forEach { it.deleteRecursively() }
+        clearIncoming()
+    }
+
+    /**
+     * Copies an archive that another app shared through a content:// URI into private cache, where it can
+     * be previewed and extracted like any file. [declaredSize] is the size the other app reported, or 0
+     * when unknown; an archive that cannot fit is refused before anything is copied. Only the newest copy
+     * is kept, and a copy that fails or is cancelled is deleted at once.
+     */
+    fun importIncoming(name: String, declaredSize: Long, control: OperationControl, open: () -> InputStream?): Entry {
+        // Copies that no screen previews any more go first, so they never count against the new one.
+        clearIncoming()
+        if (declaredSize > 0) Safety.space(cacheDir, declaredSize)
+        val session = File(incomingRoot, UUID.randomUUID().toString())
+        if (!session.mkdirs()) throw PocketError("Cannot create private archive cache.")
+        try {
+            val target = File(session, incomingName(name))
+            val input = open() ?: throw PocketError("Android could not open the selected archive.")
+            input.use { source ->
+                target.outputStream().use { output -> Safety.copyStream(source, output, control, target.name, spaceRoot = cacheDir) }
+            }
+            control.check()
+            if (target.length() == 0L) throw PocketError("The selected archive is empty or could not be copied.")
+            return entry(target)
+        } catch (error: Exception) {
+            session.deleteRecursively()
+            throw error
+        }
+    }
+
+    /** Deletes [entry] when it is a private copy made by [importIncoming]; any other file is left alone. */
+    fun discardIncoming(entry: Entry) {
+        val session = entry.file.parentFile ?: return
+        if (session.parentFile?.let(::canonical) == canonical(incomingRoot)) session.deleteRecursively()
+    }
+
+    private fun clearIncoming() { incomingRoot.listFiles()?.forEach { it.deleteRecursively() } }
+
+    /** A single file name for a private copy: no path parts or control characters, short enough for any file system. */
+    private fun incomingName(name: String): String {
+        var clean = name.map { if (it == '/' || it == '\\' || it == ':' || it.code < 32) '_' else it }.joinToString("").trim()
+        // Dropped from the front, so the extension that tells the archive type survives.
+        while (clean.toByteArray().size > 200) clean = clean.substring(clean.offsetByCodePoints(0, 1))
+        return if (clean.isBlank() || clean == "." || clean == "..") "Archive.zip" else clean
     }
 
     /**

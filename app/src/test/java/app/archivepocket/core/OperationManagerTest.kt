@@ -94,4 +94,23 @@ class OperationManagerTest {
         assertFalse(reported.running)
         assertEquals("Cannot clean previous private temporary files.", manager.takeOutcome()!!.error?.message)
     }
+
+    @Test fun quietOperationIsCancellableAndMarksItsResult() {
+        val manager = manager()
+        val copying = CountDownLatch(1)
+        manager.start("Open archive", expectedBytes = { 4096L }, quiet = true) { control ->
+            copying.countDown()
+            while (true) { control.check(); Thread.sleep(5) }
+        }
+        assertTrue(copying.await(10, TimeUnit.SECONDS))
+        assertEquals(4096L, manager.await { it.total > 0 }.total)
+        manager.cancel()
+        manager.await { !it.running }
+        val outcome = manager.takeOutcome()!!
+        assertTrue(outcome.quiet)
+        assertTrue(outcome.error is PocketError)
+        manager.start("Copy") { }
+        manager.await { !it.running && it.outcomes.isNotEmpty() }
+        assertFalse(manager.takeOutcome()!!.quiet)
+    }
 }
